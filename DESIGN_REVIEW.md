@@ -1,34 +1,31 @@
-# AgentGuard design review
+# Design review and decisions
 
-## Review status
+## Product direction
 
-Gemini review completed successfully using `gemini-3.6-flash` on 2026-08-25. The ChatGPT review was attempted with the available GPT model, but the configured endpoint returned `insufficient_quota` (HTTP 429); no ChatGPT recommendation was used as evidence.
+The repository name remains **Agent Account Google ID — Give Your AI an Identity**. The product wraps a user-owned agent such as Claude Code or Codex and adds a bounded execution session, local observation, emergency controls, policy guardrails, an operator-authorized identity reference, and an ephemeral browser-profile lifecycle.
 
-## Decision
+## Review result
 
-Build a narrow local-first MVP as a **process supervisor + event bus + policy guardrail + live JSONL observer**. Do not build a custom kernel sandbox, credential broker, browser-login layer, or shared Google identity.
+A new review prompt covered the expanded browser/identity scope, provider authorization, per-session isolation, explicit URL allowlists, manual MFA/CAPTCHA handoff, lifecycle cleanup, Claude/Codex/MCP adapters, and the prohibition on credential theft or shared-account behavior.
 
-## Architecture decisions
+The ChatGPT-compatible endpoint was attempted and returned `429 insufficient_quota`. Gemini was attempted with a fallback model and returned `503 model unavailable`. The prompt contained no credentials or user secrets. The implementation therefore follows the previously recorded architecture review and the repository threat model rather than claiming a successful fresh model review.
 
-1. Spawn the wrapped agent in a dedicated process group. Timer expiry, stop, and cancel target the whole group, then perform best-effort descendant cleanup.
-2. Use canonical workspace checks and environment boundaries. Shell command matching is only a guardrail and must never be described as a complete security boundary.
-3. Keep event records in JSONL so the stream is append-only, inspectable, and dependency-free. Redact known secret patterns before writing records.
-4. Use one supervisor abstraction for Claude Code and Codex. Claude Code can optionally emit hook events; Codex is supervised as a normal local process.
-5. Keep the viewer local and text-based in the MVP. `agentguard watch` tails a session event file; no remote viewer or browser-login system is included.
-6. Keep provider identity, Google account, browser profile, cookies, refresh tokens, and login automation completely absent from this repository. The user explicitly adds that part separately.
-7. Treat command policy, output redaction, and workspace checks as safety guardrails. Users must still run agents in an OS/container sandbox for strong isolation.
+## Decisions
 
-## Main risks recorded
+| Decision | Rationale |
+|---|---|
+| Keep a process supervisor and event bus rather than build a custom operating system sandbox. | A supervisor can provide TTL, stop, pause, and audit behavior while a container/VM supplies stronger isolation when required. |
+| Use process groups for lifecycle control. | Stops are more reliable than targeting only the agent's PID, while still remaining best effort. |
+| Keep identity data metadata-only. | Passwords, cookies, tokens, recovery codes, and private keys must not enter the package or its logs. |
+| Require explicit HTTPS browser allowlists. | Default-deny navigation reduces accidental exposure and makes consent reviewable. |
+| Block sensitive Google services and account-recovery paths. | The browser identity is not a general account-administration channel. |
+| Use manual login handoff. | Provider login, MFA, and CAPTCHA stay in the provider's normal UI and with the authorized operator. |
+| Mark login completion as unverified. | An operator signal is not cryptographic proof and the package must not imply otherwise. |
+| Keep the viewer local and text-based. | Remote live video introduces authentication, retention, privacy, and deployment risks not solved by this CLI. |
+| Treat URL/command checks as guardrails. | Subprocesses and browsers can bypass Python checks; stronger environments need an OS firewall and VM/container. |
+| Make the normal run path automatic. | `agentguard run` can create a validated browser context before the Agent, pass only `AGENTGUARD_*` session metadata, and clean it after exit/TTL; no repeated user commands are needed for lifecycle control. |
+| Add provider-specific integrations only after authorization review. | Google account creation, shared account pools, cookie import, and arbitrary-site login are outside the safe MVP. |
 
-- Regex-only Shell blocking can be bypassed by encoded commands or scripts.
-- Killing only the parent process can leave child processes running; process-group cleanup is required.
-- Raw byte redaction can corrupt UTF-8; redaction is applied to decoded line/chunk boundaries and a conservative carry buffer.
-- Claude Code and Codex expose different event surfaces; the MVP uses a shared process wrapper and optional Claude hook ingestion rather than pretending their internals are identical.
+## Current implementation boundary
 
-## Three-week scope
-
-Week 1: supervisor, TTL, process-group stop, JSONL event bus, redaction, workspace checks.
-
-Week 2: policy engine, `watch`, pause/resume where supported, Claude hook adapter, Codex command wrapper.
-
-Week 3: skill instructions, tests, threat model, examples, packaging documentation, and repository cleanup.
+The branch implements the safe identity-session framework. It does not provision a Google account, host a remote browser, verify a login, or make arbitrary websites accept an agent identity. Those functions require an authorized provider model and a separate deployment/security review.

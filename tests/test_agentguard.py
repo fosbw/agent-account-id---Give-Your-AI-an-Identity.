@@ -38,6 +38,32 @@ def test_policy_workspace_and_sensitive_paths(tmp_path: Path) -> None:
     assert Policy(tmp_path, allow_network=True).check_command("curl https://example.test")[0]
 
 
+def test_supervisor_passes_only_non_secret_agent_context(tmp_path: Path) -> None:
+    supervisor = Supervisor(tmp_path / "sessions")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    output = workspace / "context.txt"
+    command = [
+        sys.executable,
+        "-c",
+        "import os; open('context.txt', 'w').write(os.getenv('AGENTGUARD_IDENTITY_ID', '') + '|' + os.getenv('AGENTGUARD_BROWSER_PROFILE', '') + '|' + os.getenv('NOT_ALLOWED', ''))",
+    ]
+    session_id = supervisor.new_session(command, workspace, 5)
+    code = supervisor.run(
+        session_id,
+        command,
+        workspace,
+        5,
+        extra_env={
+            "AGENTGUARD_IDENTITY_ID": "id-demo",
+            "AGENTGUARD_BROWSER_PROFILE": "/tmp/profile",
+            "NOT_ALLOWED": "must-not-pass",
+        },
+    )
+    assert code == 0
+    assert output.read_text() == "id-demo|/tmp/profile|"
+
+
 def test_event_log_is_redacted(tmp_path: Path) -> None:
     log = EventLog(tmp_path / "events.jsonl", "s1", Redactor())
     log.emit("agent.output", {"text": "api_key=sk-abcdefghijklmnopqrstuvwxyz123456"})
