@@ -61,7 +61,7 @@ python -m agentguard run \
   -- <agent-command> <args>
 ```
 
-The command creates the temporary browser context before the Agent starts, passes only `AGENTGUARD_*` session metadata to the Agent, and cleans up when the Agent exits or the TTL expires. Do not put credentials in any argument or environment variable.
+The command creates the temporary browser context before the Agent starts, records the browser session in the Agent session metadata, passes only `AGENTGUARD_*` session metadata to the Agent, and cleans up when the Agent exits or the TTL expires. Use `python -m agentguard browser watch <browser-session-id> --follow` for the local browser event stream. Do not put credentials in any argument or environment variable.
 
 ## Browser session
 

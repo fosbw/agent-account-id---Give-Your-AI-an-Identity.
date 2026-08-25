@@ -41,7 +41,7 @@ class Supervisor:
         self.root = (root or Path(configured_root) if configured_root else root or Path.home() / ".agentguard" / "sessions").expanduser()
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def new_session(self, command: Iterable[str], workspace: Path, ttl: float, allow_network: bool = False) -> str:
+    def new_session(self, command: Iterable[str], workspace: Path, ttl: float, allow_network: bool = False, context: dict[str, str] | None = None) -> str:
         if ttl <= 0:
             raise ValueError("ttl must be greater than zero")
         command = list(command)
@@ -53,6 +53,10 @@ class Supervisor:
         redactor = Redactor()
         log = EventLog(paths.events, session_id, redactor)
         policy = Policy(workspace, allow_network=allow_network)
+        safe_context = {}
+        for key, value in (context or {}).items():
+            if key in {"identity_id", "browser_session_id", "browser_profile", "browser_allowed_domains"} and isinstance(value, str) and len(value) <= 2048:
+                safe_context[key] = value
         metadata = {
             "session_id": session_id,
             "command": command,
@@ -63,9 +67,12 @@ class Supervisor:
             "created_at": time.time(),
             "pid": None,
             "pgid": None,
+            "context": safe_context,
         }
         self._write_metadata(paths, metadata)
-        log.emit("session.created", {"command": command, "workspace": str(policy.workspace), "ttl_seconds": ttl})
+        log.emit("session.created", {"command": command, "workspace": str(policy.workspace), "ttl_seconds": ttl, "context": safe_context})
+        if safe_context:
+            log.emit("session.identity_context_attached", safe_context)
         return session_id
 
     def run(self, session_id: str, command: list[str], workspace: Path, ttl: float, allow_network: bool = False, extra_env: dict[str, str] | None = None) -> int:

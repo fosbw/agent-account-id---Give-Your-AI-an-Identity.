@@ -38,6 +38,7 @@ The command prints a session ID. In another terminal:
 ```bash
 python -m agentguard list
 python -m agentguard watch <session-id> --follow
+python -m agentguard browser watch <browser-session-id> --follow
 python -m agentguard pause <session-id>
 python -m agentguard resume <session-id>
 python -m agentguard stop <session-id> --reason user_requested

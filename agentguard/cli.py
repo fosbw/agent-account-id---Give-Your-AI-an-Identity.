@@ -119,6 +119,12 @@ def build_parser() -> argparse.ArgumentParser:
     show = browser_sub.add_parser("show", help="show non-secret browser session metadata")
     show.add_argument("--browser-dir", type=Path, default=None)
     show.add_argument("session_id")
+
+    browser_watch = browser_sub.add_parser("watch", help="follow local browser events")
+    browser_watch.add_argument("--browser-dir", type=Path, default=None)
+    browser_watch.add_argument("session_id")
+    browser_watch.add_argument("--follow", action="store_true")
+    browser_watch.add_argument("--json", action="store_true")
     return parser
 
 
@@ -155,7 +161,15 @@ def cmd_run(args) -> int:
         browser_manager = BrowserSessionManager(args.browser_dir)
         browser_manifest = browser_manager.create(args.ttl, tuple(args.allowed_domains), identity_provider="google", identity_id=args.identity_id)
     try:
-        session_id = supervisor.new_session(command, args.workspace, args.ttl, args.allow_network)
+        context = None
+        if browser_manifest is not None:
+            context = {
+                "identity_id": args.identity_id,
+                "browser_session_id": browser_manifest.session_id,
+                "browser_profile": browser_manifest.profile_dir,
+                "browser_allowed_domains": ",".join(browser_manifest.allowed_domains),
+            }
+        session_id = supervisor.new_session(command, args.workspace, args.ttl, args.allow_network, context=context)
         print(f"AGENTGUARD_SESSION_ID={session_id}", flush=True)
         extra_env = None
         if browser_manifest is not None and browser_manager is not None:
@@ -283,6 +297,39 @@ def cmd_identity(args) -> int:
     raise SystemExit("unknown identity action")
 
 
+def cmd_browser_watch(args) -> int:
+    manager = browser_from(args)
+    manifest = manager.get(args.session_id)
+    events_path = manager.root / args.session_id / "events.jsonl"
+    redactor = Redactor()
+    position = 0
+    while True:
+        if events_path.exists():
+            with events_path.open("r", encoding="utf-8") as fh:
+                fh.seek(position)
+                while True:
+                    line = fh.readline()
+                    if not line:
+                        break
+                    position = fh.tell()
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if args.json:
+                        print(json.dumps(redactor.redact_object(row), ensure_ascii=False), flush=True)
+                    else:
+                        payload = row.get("payload", {})
+                        print(f"[{row.get('kind')}] {json.dumps(payload, ensure_ascii=False)}", flush=True)
+        if not args.follow or manifest.status == "cleaned":
+            return 0
+        try:
+            manifest = manager.get(args.session_id)
+        except FileNotFoundError:
+            return 0
+        time.sleep(0.25)
+
+
 def cmd_browser(args) -> int:
     manager = browser_from(args)
     if args.browser_action == "create":
@@ -332,6 +379,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.action == "identity":
         return cmd_identity(args)
     if args.action == "browser":
+        if args.browser_action == "watch":
+            return cmd_browser_watch(args)
         return cmd_browser(args)
     supervisor = supervisor_from(args)
     if args.action == "stop":

@@ -82,6 +82,7 @@ The viewer is local and text-based:
 
 ```bash
 python -m agentguard watch <session-id> --follow
+python -m agentguard browser watch <browser-session-id> --follow
 ```
 
 This intentionally avoids turning a local session log into a remote account-sharing service. A remote read-only viewer or live video layer, if added later, must be designed separately with authentication, authorization, redaction, retention, explicit consent, and a deployment environment.
