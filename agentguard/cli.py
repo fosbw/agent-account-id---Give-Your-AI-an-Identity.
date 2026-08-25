@@ -2,20 +2,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 
+from .browser import BrowserSessionManager
 from .events import EventLog
+from .identity import GoogleIdentityMetadataAdapter, IdentityStore, OperatorAttachedIdentityAdapter
 from .policy import Policy
 from .redaction import Redactor
 from .supervisor import SessionPaths, Supervisor
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="agentguard", description="Local session supervisor for AI coding agents")
-    parser.add_argument("--sessions-dir", type=Path, default=None, help="session storage directory")
+    parser = argparse.ArgumentParser(prog="agentguard", description="Controlled sessions for user-owned AI agents")
+    parser.add_argument("--sessions-dir", type=Path, default=None, help="agent session storage directory")
     sub = parser.add_subparsers(dest="action", required=True)
 
     run = sub.add_parser("run", help="run an agent under supervision")
@@ -38,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--follow", action="store_true")
     watch.add_argument("--json", action="store_true")
 
-    ls = sub.add_parser("list", help="list local sessions")
+    ls = sub.add_parser("list", help="list local agent sessions")
     ls.add_argument("--sessions-dir", type=Path, default=argparse.SUPPRESS)
     ls.add_argument("--json", action="store_true")
 
@@ -53,11 +55,78 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--allow-network", action="store_true")
     check.add_argument("--command")
     check.add_argument("--path")
+
+    identity = sub.add_parser("identity", help="manage non-secret identity references")
+    identity_sub = identity.add_subparsers(dest="identity_action", required=True)
+    attach = identity_sub.add_parser("attach", help="attach provider-authorized identity metadata")
+    attach.add_argument("--identity-dir", type=Path, default=None)
+    attach.add_argument("--provider", choices=("google", "operator-attached"), required=True)
+    attach.add_argument("--subject", required=True)
+    attach.add_argument("--email")
+    attach.add_argument("--email-verified", action="store_true")
+    attach.add_argument("--authorization-basis", choices=("operator_authorized", "provider_authorized", "test_account"), default="operator_authorized")
+    identity_show = identity_sub.add_parser("show", help="show safe identity metadata")
+    identity_show.add_argument("--identity-dir", type=Path, default=None)
+    identity_show.add_argument("identity_id")
+    identity_revoke = identity_sub.add_parser("revoke", help="revoke local identity metadata")
+    identity_revoke.add_argument("--identity-dir", type=Path, default=None)
+    identity_revoke.add_argument("identity_id")
+
+    browser = sub.add_parser("browser", help="manage an isolated, operator-authorized browser session")
+    browser_sub = browser.add_subparsers(dest="browser_action", required=True)
+
+    create = browser_sub.add_parser("create", help="create an ephemeral browser session manifest")
+    create.add_argument("--browser-dir", type=Path, default=None)
+    create.add_argument("--ttl", type=float, required=True)
+    create.add_argument("--allow-domain", action="append", dest="allowed_domains", required=True)
+    create.add_argument("--identity-provider", default="operator-attached")
+    create.add_argument("--identity-id", default=None, help="non-secret identity reference created with identity attach")
+
+    launch = browser_sub.add_parser("launch", help="launch a browser profile after URL policy approval")
+    launch.add_argument("--browser-dir", type=Path, default=None)
+    launch.add_argument("session_id")
+    launch.add_argument("--url", required=True)
+    launch.add_argument("--browser-bin", default=None)
+    launch.add_argument("--detach", action="store_true", help="return without waiting for TTL cleanup")
+
+    navigate = browser_sub.add_parser("check-url", help="evaluate a URL against the session allowlist")
+    navigate.add_argument("--browser-dir", type=Path, default=None)
+    navigate.add_argument("session_id")
+    navigate.add_argument("url")
+    navigate.add_argument("--purpose", choices=("navigate", "login_handoff"), default="navigate")
+
+    handoff = browser_sub.add_parser("login-handoff", help="record that an operator must log in manually")
+    handoff.add_argument("--browser-dir", type=Path, default=None)
+    handoff.add_argument("session_id")
+    handoff.add_argument("domain")
+
+    complete = browser_sub.add_parser("login-complete", help="record an operator's manual login signal")
+    complete.add_argument("--browser-dir", type=Path, default=None)
+    complete.add_argument("session_id")
+    complete.add_argument("domain")
+
+    cleanup = browser_sub.add_parser("cleanup", help="stop the browser and delete its ephemeral profile")
+    cleanup.add_argument("--browser-dir", type=Path, default=None)
+    cleanup.add_argument("session_id")
+    cleanup.add_argument("--reason", default="user_cleanup")
+
+    show = browser_sub.add_parser("show", help="show non-secret browser session metadata")
+    show.add_argument("--browser-dir", type=Path, default=None)
+    show.add_argument("session_id")
     return parser
 
 
 def supervisor_from(args) -> Supervisor:
     return Supervisor(args.sessions_dir)
+
+
+def browser_from(args) -> BrowserSessionManager:
+    return BrowserSessionManager(args.browser_dir)
+
+
+def identity_store_from(args) -> IdentityStore:
+    root = args.identity_dir or Path.home() / ".agentguard" / "identities"
+    return IdentityStore(root)
 
 
 def cmd_run(args) -> int:
@@ -157,6 +226,65 @@ def cmd_policy_check(args) -> int:
     raise SystemExit("policy-check requires --command or --path")
 
 
+def cmd_identity(args) -> int:
+    store = identity_store_from(args)
+    if args.identity_action == "attach":
+        metadata = {
+            "provider": args.provider,
+            "subject": args.subject,
+            "email": args.email,
+            "email_verified": args.email_verified,
+            "authorization_basis": args.authorization_basis,
+        }
+        adapter = GoogleIdentityMetadataAdapter() if args.provider == "google" else OperatorAttachedIdentityAdapter()
+        identity = adapter.attach(metadata)
+        store.save(identity)
+        print(json.dumps(identity.safe_metadata(), ensure_ascii=False, indent=2))
+        return 0
+    if args.identity_action == "show":
+        print(json.dumps(store.get(args.identity_id).safe_metadata(), ensure_ascii=False, indent=2))
+        return 0
+    if args.identity_action == "revoke":
+        store.revoke(args.identity_id)
+        print(json.dumps({"ok": True, "identity_id": args.identity_id, "revoked": True}))
+        return 0
+    raise SystemExit("unknown identity action")
+
+
+def cmd_browser(args) -> int:
+    manager = browser_from(args)
+    if args.browser_action == "create":
+        manifest = manager.create(args.ttl, tuple(args.allowed_domains), args.identity_provider, args.identity_id)
+        print(json.dumps(asdict(manifest), ensure_ascii=False, indent=2))
+        return 0
+    if args.browser_action == "launch":
+        pid = manager.launch(args.session_id, args.url, args.browser_bin)
+        print(json.dumps({"session_id": args.session_id, "browser_pid": pid, "detached": args.detach}))
+        if not args.detach:
+            manager.wait_until_expired(args.session_id)
+        return 0
+    if args.browser_action == "check-url":
+        decision = manager.request_navigation(args.session_id, args.url, args.purpose)
+        print(json.dumps(asdict(decision), ensure_ascii=False))
+        return 0 if decision.allowed else 2
+    if args.browser_action == "login-handoff":
+        manager.login_handoff(args.session_id, args.domain)
+        print(json.dumps({"ok": True, "event": "browser.login_handoff_required", "domain": args.domain}))
+        return 0
+    if args.browser_action == "login-complete":
+        manager.mark_manual_login_complete(args.session_id, args.domain)
+        print(json.dumps({"ok": True, "event": "browser.login_manual_signal", "domain": args.domain, "verified": False}))
+        return 0
+    if args.browser_action == "cleanup":
+        manager.cleanup(args.session_id, args.reason)
+        print(json.dumps({"ok": True, "session_id": args.session_id, "status": "cleaned"}))
+        return 0
+    if args.browser_action == "show":
+        print(json.dumps(asdict(manager.get(args.session_id)), ensure_ascii=False, indent=2))
+        return 0
+    raise SystemExit("unknown browser action")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.action == "run":
@@ -169,6 +297,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hook(args)
     if args.action == "policy-check":
         return cmd_policy_check(args)
+    if args.action == "identity":
+        return cmd_identity(args)
+    if args.action == "browser":
+        return cmd_browser(args)
     supervisor = supervisor_from(args)
     if args.action == "stop":
         supervisor.stop(args.session_id, args.reason)

@@ -1,10 +1,10 @@
-# Claude Code and Codex integration
+# Agent, identity, and browser integration
 
 ## Claude Code
 
-Claude Code exposes lifecycle hooks, including pre-tool and post-tool events. The adapter in `adapters/claude_hook.py` accepts the hook JSON from standard input, records a redacted event, checks the supported payload fields against local guardrails, and emits a `PreToolUse` deny response when a rule matches.
+Claude Code exposes lifecycle hooks, including pre-tool and post-tool events. The adapter in `adapters/claude_hook.py` accepts hook JSON from standard input, records a redacted event, checks supported payload fields against local guardrails, and emits a `PreToolUse` deny response when a rule matches.
 
-A user's Claude Code settings can call it for a supervised session:
+A user's Claude Code settings can call it for an intentionally supervised session:
 
 ```json
 {
@@ -34,18 +34,54 @@ Codex can be wrapped as a local process:
 python adapters/codex_run.py --ttl 1800 --workspace . -- codex
 ```
 
-The wrapper does not authenticate Codex, create a user, import cookies, or alter provider settings. It supervises the command the user already installed and authenticated.
+The wrapper does not authenticate Codex, create a user, import cookies, or alter provider settings. It supervises the command the user already installed and authorized.
+
+## Safe identity reference
+
+Attach only provider-authorized metadata:
+
+```bash
+python -m agentguard identity attach \
+  --provider google \
+  --subject provider-subject-id \
+  --authorization-basis test_account
+```
+
+The resulting `identity_id` is a reference, not a credential. Never put a password, cookie, OAuth token, recovery code, or private key in CLI arguments, environment variables intended for metadata, manifests, or logs.
+
+## Controlled browser session
+
+Create a short-lived session with an explicit allowlist:
+
+```bash
+python -m agentguard browser create \
+  --ttl 1800 \
+  --allow-domain example.com \
+  --identity-provider google \
+  --identity-id <identity-id>
+```
+
+The browser commands can check URLs, launch an ephemeral Chromium profile, record a manual login handoff, and clean up. The handoff is deliberately human-operated:
+
+```bash
+python -m agentguard browser login-handoff <browser-session-id> example.com
+python -m agentguard browser launch <browser-session-id> --url https://example.com/
+# Authorized operator completes normal login/MFA/CAPTCHA UI.
+python -m agentguard browser login-complete <browser-session-id> example.com
+```
+
+The local policy blocks embedded URL credentials, private targets, sensitive Google services, and recovery/password/challenge paths. It does not replace a container, VM, browser extension, proxy, or egress firewall.
 
 ## Chat invocation
 
-Copy `skill/SKILL.md` into the user's supported skills directory or plugin mechanism. The skill teaches the agent to ask for a duration and workspace, then invoke `python -m agentguard run ...`. It does not contain provider credentials or identity workflows.
+Copy `skill/SKILL.md` into the user's supported skills directory or plugin mechanism. The skill teaches the agent to ask for a duration, workspace, identity reference, and domain allowlist, then invoke local commands. It does not contain provider credentials or account-creation workflows.
 
 ## Viewer model
 
-The MVP viewer is local and text-based:
+The viewer is local and text-based:
 
 ```bash
 python -m agentguard watch <session-id> --follow
 ```
 
-This avoids turning a local session log into a remote account-sharing service. A remote read-only viewer, if added later, must be designed separately with authentication, authorization, redaction, retention, and explicit user consent.
+This intentionally avoids turning a local session log into a remote account-sharing service. A remote read-only viewer or live video layer, if added later, must be designed separately with authentication, authorization, redaction, retention, explicit consent, and a deployment environment.

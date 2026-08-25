@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentguard-local"
 version = "0.1.0"
-description = "Local timer, observer, policy guardrails, and kill switch for user-owned AI coding agents"
+description = "Controlled identity-session, browser lifecycle, timer, observer, and policy guardrails for user-owned AI agents"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []

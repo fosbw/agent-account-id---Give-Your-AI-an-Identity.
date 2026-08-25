@@ -1,25 +1,31 @@
-# AgentGuard
+# Agent Account Google ID — Give Your AI an Identity
 
-**AgentGuard** is a local-first supervisor for user-owned AI coding agents such as Claude Code and Codex. It adds a wall-clock session timer, a redacted local event stream, process-group stop, workspace checks, command guardrails, and cleanup without replacing the user's model, account, API key, or agent.
+**Agent Account Google ID** is a local-first control plane around a user-owned AI agent such as Claude Code or Codex CLI. The user brings the agent, model access, API keys, workspace, and execution environment. The project adds a bounded session, an isolated browser-profile lifecycle, an operator-authorized identity reference, a redacted live event stream, pause/stop controls, policy checks, and cleanup.
 
-> Run your agent with a clock, a trail, and an emergency stop.
+The Python package and command remain named `agentguard` for compatibility with the first MVP. The GitHub repository name is intentionally unchanged.
+
+> Give the agent a clock, a controlled identity reference, a visible trail, and an emergency stop—without becoming a password broker or a shared-account service.
 
 ## What is included
 
-| Capability | MVP behavior |
+| Capability | Current behavior |
 |---|---|
-| Timer | Ends the supervised process group when the TTL expires |
-| Live observer | `agentguard watch` tails a local redacted JSONL event stream |
-| Kill switch | Stops the process group and attempts descendant cleanup |
-| Pause/resume | POSIX `SIGSTOP`/`SIGCONT`; Windows reports that stop is required |
-| Workspace policy | Canonical path checks and sensitive-path guardrails |
-| Command guardrails | Blocks a small set of destructive/network-capable patterns |
-| Secret redaction | Removes common API keys, bearer tokens, private keys, and passwords from logs |
-| Claude Code adapter | Reads hook JSON, records an event, and can return a `PreToolUse` deny decision |
-| Codex adapter | Runs the locally installed Codex CLI under the same supervisor |
-| Chat skill | `skill/SKILL.md` teaches an agent how to invoke the local commands |
+| Agent session timer | Ends the supervised agent process group when the TTL expires. |
+| Live observer | `agentguard watch` tails a local redacted JSONL stream; it is read-only. |
+| Pause, stop, kill | POSIX pause/resume plus process-group stop and best-effort descendant cleanup. |
+| Workspace policy | Canonical path checks and sensitive-path guardrails. |
+| Command guardrails | Blocks a small set of destructive and network-capable patterns; it is not a sandbox. |
+| Secret redaction | Redacts common API keys, bearer tokens, private keys, passwords, and credential-like fields from events. |
+| Identity reference | Attaches safe provider/subject metadata only. No password, cookie, OAuth token, recovery code, or private key is accepted or persisted. |
+| Browser session | Creates an ephemeral Chromium profile manifest with a TTL and explicit HTTPS domain allowlist. |
+| Browser policy | Blocks credentials in URLs, localhost/private/link-local/metadata targets, sensitive Google services, and recovery/password/challenge paths. |
+| Login handoff | Records that an authorized operator must complete login manually in the isolated browser window. The completion command is only a manual signal; it does not verify or extract credentials. |
+| Browser cleanup | Stops the tracked browser process and deletes the ephemeral profile. The non-secret manifest and event trail remain for audit. |
+| Claude Code adapter | Reads hook JSON, records a redacted event, and can return a `PreToolUse` deny decision. |
+| Codex adapter | Runs the locally installed Codex CLI under the same supervisor. |
+| Chat skill | `skill/SKILL.md` teaches an agent how to invoke the local commands. |
 
-## Quick start
+## Quick start: supervise an agent
 
 From the repository root:
 
@@ -32,6 +38,8 @@ The command prints a session ID. In another terminal:
 ```bash
 python -m agentguard list
 python -m agentguard watch <session-id> --follow
+python -m agentguard pause <session-id>
+python -m agentguard resume <session-id>
 python -m agentguard stop <session-id> --reason user_requested
 ```
 
@@ -42,30 +50,74 @@ AGENTGUARD_SESSION_ID=<session-id> \
   python adapters/claude_hook.py --event PreToolUse
 ```
 
-The hook reads JSON from stdin. Add it to the user's own Claude Code settings only for sessions the user intentionally supervises.
-
 Codex wrapper example:
 
 ```bash
 python adapters/codex_run.py --ttl 1800 --workspace . -- codex
 ```
 
-Run guardrail checks directly:
+## Quick start: attach a safe identity reference
+
+The following command records metadata for an identity that was provisioned and authorized outside this package. It does **not** create a Google account or log in to any website:
 
 ```bash
-python -m agentguard policy-check --workspace . --command 'rm -rf /'
-python -m agentguard policy-check --workspace . --path .env
+python -m agentguard identity attach \
+  --provider google \
+  --subject provider-subject-id \
+  --email agent@example.com \
+  --email-verified \
+  --authorization-basis test_account
 ```
 
-## Important security boundary
+Only the returned non-secret `identity_id` should be used in a browser manifest. Never place a password, cookie, refresh token, access token, recovery code, or private key in a command line or metadata file.
 
-The command policy is a **guardrail**, not a complete sandbox. Regex or substring checks can be bypassed by scripts, encoding, aliases, interpreters, or child processes. For untrusted work, run the agent inside a container or VM and use AgentGuard as the timer, observer, and process supervisor around that stronger boundary.
+## Quick start: controlled browser session
 
-The process supervisor creates a dedicated process group on POSIX and uses best-effort tree termination. No local process supervisor can guarantee cleanup of a malicious privileged process.
+Create an ephemeral profile with an allowlist:
 
-## Explicitly excluded
+```bash
+python -m agentguard browser create \
+  --ttl 1800 \
+  --allow-domain example.com \
+  --allow-domain login.example.com \
+  --identity-provider google \
+  --identity-id <identity-id>
+```
 
-This repository intentionally contains no Google identity, browser profile, cookies, refresh tokens, login automation, shared account, credential broker, or provider-account implementation. The user requested that this portion remain empty and add it separately. Nothing in this MVP creates or manages an identity.
+Check a target before navigation:
+
+```bash
+python -m agentguard browser check-url <browser-session-id> https://example.com/task
+python -m agentguard browser check-url <browser-session-id> https://mail.google.com/
+```
+
+Launch a local Chromium-compatible browser. The default command waits until TTL and then cleans the profile; use `--detach` only when an external supervisor will call cleanup:
+
+```bash
+python -m agentguard browser launch <browser-session-id> --url https://example.com/task
+```
+
+Login is an explicit operator handoff, not automated credential entry:
+
+```bash
+python -m agentguard browser login-handoff <browser-session-id> example.com
+# The authorized operator completes the provider's normal login/MFA/CAPTCHA flow.
+python -m agentguard browser login-complete <browser-session-id> example.com
+```
+
+The browser policy is a decision layer. It is **not** an OS firewall, a Chromium extension, a proxy, or a guarantee that every navigation inside a browser will be intercepted. For untrusted agents, combine it with a container or VM, a real egress firewall, and provider-approved account controls.
+
+## Security boundaries
+
+This project is designed for an identity owned or explicitly authorized by the operator or provider. It does not create, distribute, rent, rotate, or share consumer accounts. It does not import cookies, harvest passwords, bypass MFA or CAPTCHA, alter recovery settings, access Gmail/Drive/payments/admin pages, or provide unrestricted “log in anywhere” automation.
+
+The existing command policy is a **guardrail**, not a complete sandbox. Regex and substring checks can be bypassed by scripts, aliases, encoding, interpreters, or child processes. The browser allowlist is likewise a policy decision point, not a complete network isolation boundary. Strong isolation requires a user-controlled container/VM and an OS-level egress policy.
+
+The current browser login completion event is a user/operator assertion with `verified: false`; it is deliberately not proof of authentication. Any future provider adapter must document authorization, scope, retention, revocation, and acceptable-use requirements before it is enabled.
+
+## Supported agents
+
+The current first-class adapters are Claude Code hooks and the Codex process wrapper. Gemini CLI, GitHub Copilot CLI, MCP-compatible agents, and future browser-capable runtimes are documented as integration targets in [`SUPPORTED_AGENTS.md`](SUPPORTED_AGENTS.md), not as completed integrations.
 
 ## Development
 
@@ -73,20 +125,21 @@ The project has no runtime dependencies beyond Python 3.10+.
 
 ```bash
 python -m pytest -q
+python -m compileall -q agentguard adapters
 python -m agentguard --help
 ```
 
 ## Layout
 
 ```text
-agentguard/       Core supervisor, event log, redaction, and policy layer
+agentguard/       Supervisor, browser policy, identity references, events, redaction, and guardrails
 adapters/         Claude Code hook and Codex process adapters
 skill/            Chat-invocable skill instructions
 tests/            Unit tests
-docs/             Threat model and implementation notes
+docs/             Threat model, browser/identity boundary, and integration notes
 DESIGN_REVIEW.md  Architecture review and decisions
 ```
 
 ## Status
 
-This is an MVP foundation. It is intentionally conservative: local event visibility and lifecycle control are implemented first, while provider identity and browser login remain out of scope.
+This branch implements the **identity-session safety layer** around the AgentGuard foundation. It does not claim to provision a Google account, provide a hosted browser, verify a login, or make arbitrary websites accept an agent identity. Those capabilities depend on provider authorization and an explicit deployment environment that are not present in this repository.
