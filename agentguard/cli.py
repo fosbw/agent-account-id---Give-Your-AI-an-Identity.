@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .browser import BrowserSessionManager
 from .events import EventLog
+from .google_oauth import GoogleOAuthClient, GoogleOAuthConfig
 from .identity import GoogleIdentityMetadataAdapter, IdentityStore, OperatorAttachedIdentityAdapter
 from .policy import Policy
 from .redaction import Redactor
@@ -77,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
     identity_revoke = identity_sub.add_parser("revoke", help="revoke local identity metadata")
     identity_revoke.add_argument("--identity-dir", type=Path, default=None)
     identity_revoke.add_argument("identity_id")
+
+    google_auth = sub.add_parser("google-auth", help="obtain user-consented Google identity metadata using PKCE")
+    google_auth.add_argument("--client-id", required=True, help="Google installed-app OAuth client ID")
+    google_auth.add_argument("--identity-dir", type=Path, default=None)
+    google_auth.add_argument("--no-browser", action="store_true", help="print the authorization URL instead of opening it")
+    google_auth.add_argument("--timeout", type=int, default=300)
 
     browser = sub.add_parser("browser", help="manage an isolated, operator-authorized browser session")
     browser_sub = browser.add_subparsers(dest="browser_action", required=True)
@@ -272,6 +279,25 @@ def cmd_policy_check(args) -> int:
     raise SystemExit("policy-check requires --command or --path")
 
 
+def cmd_google_auth(args) -> int:
+    client = GoogleOAuthClient(GoogleOAuthConfig(client_id=args.client_id, timeout_seconds=args.timeout))
+    authorization = client.authorize(open_browser=not args.no_browser)
+    safe = authorization.safe_metadata()
+    identity = GoogleIdentityMetadataAdapter().attach(
+        {
+            "provider": "google",
+            "subject": safe.get("subject"),
+            "email": safe.get("email"),
+            "email_verified": safe.get("email_verified"),
+            "authorization_basis": "provider_authorized",
+        }
+    )
+    store = identity_store_from(args)
+    store.save(identity)
+    print(json.dumps({"identity": identity.safe_metadata(), "token_persisted": False, "scopes": list(GoogleOAuthConfig(client_id=args.client_id).scopes)}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_identity(args) -> int:
     store = identity_store_from(args)
     if args.identity_action == "attach":
@@ -378,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_policy_check(args)
     if args.action == "identity":
         return cmd_identity(args)
+    if args.action == "google-auth":
+        return cmd_google_auth(args)
     if args.action == "browser":
         if args.browser_action == "watch":
             return cmd_browser_watch(args)
