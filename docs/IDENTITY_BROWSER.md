@@ -10,6 +10,10 @@ The identity layer gives an AI agent a **reference** to an operator-authorized i
 
 `BrowserSessionManifest` contains the session ID, identity reference, allowlisted domains, profile path, TTL timestamps, browser PID/PGID, and lifecycle state. It never contains browser cookies, passwords, tokens, recovery codes, or page contents.
 
+## Automatic agent context
+
+When the user has an attached non-secret identity reference and an approved domain allowlist, `agentguard run` can create the browser session before starting the Agent. It records the browser session in the Agent metadata, passes only `AGENTGUARD_IDENTITY_ID`, `AGENTGUARD_BROWSER_SESSION_ID`, `AGENTGUARD_BROWSER_PROFILE`, and `AGENTGUARD_BROWSER_ALLOWED_DOMAINS` to the child, and calls cleanup when the Agent exits or the TTL expires. The local event streams can be followed with `agentguard watch` and `agentguard browser watch`.
+
 ## Browser policy
 
 A URL is allowed only when it uses HTTPS, has no embedded credentials, resolves to a public hostname, and matches an explicit exact-or-subdomain allowlist. Localhost, private/link-local/reserved/multicast/metadata targets, and sensitive Google services are blocked. Gmail, Drive, payments, admin, account-management, recovery, password, and challenge paths are intentionally excluded.
