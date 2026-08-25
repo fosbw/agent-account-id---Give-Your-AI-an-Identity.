@@ -47,6 +47,22 @@ python -m agentguard identity attach \
 
 Store and pass only the generated `identity_id`. Do not ask for or accept the account password, cookies, OAuth tokens, recovery codes, or private keys. This command does not create an account or prove that a login succeeded.
 
+## Automatic agent + browser context
+
+When the user has already configured a non-secret identity reference and approved domains, use one supervised run so the user only specifies the task and duration:
+
+```bash
+python -m agentguard run \
+  --ttl <seconds> \
+  --identity-id <identity-id> \
+  --allow-domain <approved-domain> \
+  --browser-start-url https://approved-domain.example/ \
+  --workspace <path> \
+  -- <agent-command> <args>
+```
+
+The command creates the temporary browser context before the Agent starts, passes only `AGENTGUARD_*` session metadata to the Agent, and cleans up when the Agent exits or the TTL expires. Do not put credentials in any argument or environment variable.
+
 ## Browser session
 
 Create a short-lived isolated profile with explicit domains:
@@ -72,7 +88,7 @@ python -m agentguard browser login-handoff <browser-session-id> approved-domain.
 python -m agentguard browser login-complete <browser-session-id> approved-domain.example
 ```
 
-The completion event is an operator signal and is marked unverified. Never automate account creation, CAPTCHA/MFA bypass, password entry, cookie import, recovery changes, Gmail/Drive/payment access, or arbitrary-site login.
+The completion event is an operator signal and is marked unverified. Never automate account creation, CAPTCHA/MFA bypass, password entry, cookie import, recovery changes, Gmail/Drive/payment access, or arbitrary-site login. The automatic run path removes repeated user steps, but it does not create an identity or manufacture provider authorization.
 
 Launch and clean up a local Chromium-compatible browser only in an environment owned by the user:
 

@@ -71,6 +71,22 @@ python -m agentguard identity attach \
 
 Only the returned non-secret `identity_id` should be used in a browser manifest. Never place a password, cookie, refresh token, access token, recovery code, or private key in a command line or metadata file.
 
+## Automatic agent + browser context
+
+When a non-secret identity reference and approved domains already exist, the user can request one supervised run. The tool creates the browser context before the Agent starts, passes only session identifiers/profile metadata through `AGENTGUARD_*` variables, and cleans up after the Agent exits or the TTL expires:
+
+```bash
+python -m agentguard run \
+  --ttl 1800 \
+  --identity-id <identity-id> \
+  --allow-domain example.com \
+  --browser-start-url https://example.com/task \
+  --workspace . \
+  -- codex
+```
+
+This is the intended agent-to-tool orchestration path: the user specifies the task and time limit, while the Agent invokes the local tool. The identity adapter remains metadata-only, and this command does not create an account, inject a password, or verify a provider login.
+
 ## Quick start: controlled browser session
 
 Create an ephemeral profile with an allowlist:
@@ -105,7 +121,7 @@ python -m agentguard browser login-handoff <browser-session-id> example.com
 python -m agentguard browser login-complete <browser-session-id> example.com
 ```
 
-The browser policy is a decision layer. It is **not** an OS firewall, a Chromium extension, a proxy, or a guarantee that every navigation inside a browser will be intercepted. For untrusted agents, combine it with a container or VM, a real egress firewall, and provider-approved account controls.
+The browser policy is a decision layer. It is **not** an OS firewall, a Chromium extension, a proxy, or a guarantee that every navigation inside a browser will be intercepted. The automatic `run` path gives the Agent safe session metadata; a provider-specific runtime is still required for a real authorized identity to perform an OAuth/API action. For untrusted agents, combine it with a container or VM, a real egress firewall, and provider-approved account controls.
 
 ## Security boundaries
 

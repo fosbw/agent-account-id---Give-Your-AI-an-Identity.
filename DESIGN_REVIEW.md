@@ -23,6 +23,7 @@ The ChatGPT-compatible endpoint was attempted and returned `429 insufficient_quo
 | Mark login completion as unverified. | An operator signal is not cryptographic proof and the package must not imply otherwise. |
 | Keep the viewer local and text-based. | Remote live video introduces authentication, retention, privacy, and deployment risks not solved by this CLI. |
 | Treat URL/command checks as guardrails. | Subprocesses and browsers can bypass Python checks; stronger environments need an OS firewall and VM/container. |
+| Make the normal run path automatic. | `agentguard run` can create a validated browser context before the Agent, pass only `AGENTGUARD_*` session metadata, and clean it after exit/TTL; no repeated user commands are needed for lifecycle control. |
 | Add provider-specific integrations only after authorization review. | Google account creation, shared account pools, cookie import, and arbitrary-site login are outside the safe MVP. |
 
 ## Current implementation boundary

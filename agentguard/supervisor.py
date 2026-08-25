@@ -68,13 +68,15 @@ class Supervisor:
         log.emit("session.created", {"command": command, "workspace": str(policy.workspace), "ttl_seconds": ttl})
         return session_id
 
-    def run(self, session_id: str, command: list[str], workspace: Path, ttl: float, allow_network: bool = False) -> int:
+    def run(self, session_id: str, command: list[str], workspace: Path, ttl: float, allow_network: bool = False, extra_env: dict[str, str] | None = None) -> int:
         paths = SessionPaths(self.root, session_id)
         redactor = Redactor()
         log = EventLog(paths.events, session_id, redactor)
         policy = Policy(workspace, allow_network=allow_network)
         env = policy.environment()
         env["AGENTGUARD_SESSION_ID"] = session_id
+        if extra_env:
+            env.update({key: value for key, value in extra_env.items() if key.startswith("AGENTGUARD_")})
         start_new_session = os.name != "nt"
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
         try:

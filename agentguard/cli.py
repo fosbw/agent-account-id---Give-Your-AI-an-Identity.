@@ -25,6 +25,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--workspace", type=Path, default=Path.cwd())
     run.add_argument("--sessions-dir", type=Path, default=argparse.SUPPRESS)
     run.add_argument("--allow-network", action="store_true", help="allow network-capable command guardrails")
+    run.add_argument("--identity-id", default=None, help="non-secret identity reference for an automatic browser session")
+    run.add_argument("--identity-dir", type=Path, default=None)
+    run.add_argument("--allow-domain", action="append", dest="allowed_domains", default=None, help="approved browser domain; repeat for more domains")
+    run.add_argument("--browser-start-url", default=None, help="approved HTTPS URL to open with the session")
+    run.add_argument("--browser-bin", default=None, help="Chromium-compatible executable")
+    run.add_argument("--browser-dir", type=Path, default=None)
     run.add_argument("command", nargs=argparse.REMAINDER, help="command after --")
 
     for name in ("stop", "pause", "resume"):
@@ -136,9 +142,35 @@ def cmd_run(args) -> int:
     if not command:
         raise SystemExit("run requires a command after --")
     supervisor = supervisor_from(args)
-    session_id = supervisor.new_session(command, args.workspace, args.ttl, args.allow_network)
-    print(f"AGENTGUARD_SESSION_ID={session_id}", flush=True)
-    return supervisor.run(session_id, command, args.workspace, args.ttl, args.allow_network)
+    browser_manager = None
+    browser_manifest = None
+    requested_browser = bool(args.identity_id or args.allowed_domains or args.browser_start_url)
+    if requested_browser:
+        if not args.identity_id or not args.allowed_domains:
+            raise SystemExit("automatic browser context requires --identity-id and at least one --allow-domain")
+        try:
+            identity_store_from(args).get(args.identity_id)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"identity reference is not attached: {args.identity_id}") from exc
+        browser_manager = BrowserSessionManager(args.browser_dir)
+        browser_manifest = browser_manager.create(args.ttl, tuple(args.allowed_domains), identity_provider="google", identity_id=args.identity_id)
+    try:
+        session_id = supervisor.new_session(command, args.workspace, args.ttl, args.allow_network)
+        print(f"AGENTGUARD_SESSION_ID={session_id}", flush=True)
+        extra_env = None
+        if browser_manifest is not None and browser_manager is not None:
+            extra_env = {
+                "AGENTGUARD_IDENTITY_ID": args.identity_id,
+                "AGENTGUARD_BROWSER_SESSION_ID": browser_manifest.session_id,
+                "AGENTGUARD_BROWSER_PROFILE": browser_manifest.profile_dir,
+                "AGENTGUARD_BROWSER_ALLOWED_DOMAINS": ",".join(browser_manifest.allowed_domains),
+            }
+            if args.browser_start_url:
+                browser_manager.launch(browser_manifest.session_id, args.browser_start_url, args.browser_bin)
+        return supervisor.run(session_id, command, args.workspace, args.ttl, args.allow_network, extra_env=extra_env)
+    finally:
+        if browser_manager is not None and browser_manifest is not None:
+            browser_manager.cleanup(browser_manifest.session_id, reason="agent_session_finished")
 
 
 def cmd_watch(args) -> int:
