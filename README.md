@@ -59,7 +59,17 @@ python adapters/codex_run.py --ttl 1800 --workspace . -- codex
 
 ## Quick start: attach a safe identity reference
 
-The following command records metadata for an identity that was provisioned and authorized outside this package. It does **not** create a Google account or log in to any website:
+For a Google identity that is already provisioned and authorized, the package can perform a one-time installed-app OAuth flow using PKCE and identity scopes only. The command opens Google's normal consent screen, receives a short-lived access token in memory, obtains subject/email metadata, and persists only the non-secret identity reference:
+
+```bash
+python -m agentguard google-auth \
+  --client-id <installed-app-client-id> \
+  --identity-dir ~/.agentguard/identities
+```
+
+The OAuth command does **not** create a Google account, request Gmail/Drive/admin scopes, persist access or refresh tokens, import browser state, or log in to a website. The user/provider must own and authorize the Google identity before this step.
+
+If metadata is already available from an authorized provider flow, use:
 
 ```bash
 python -m agentguard identity attach \

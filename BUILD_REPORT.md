@@ -4,7 +4,7 @@
 
 The repository now contains a dependency-free Python 3.10+ local control plane around a user-owned AI agent. The original supervisor provides a TTL timer, dedicated POSIX process group, best-effort group termination, POSIX pause/resume, a redacted JSONL event log, local `watch`, workspace/sensitive-path checks, command guardrails, and Claude Code/Codex adapters.
 
-The new identity-session safety layer adds an `IdentityRef`/`IdentityStore` model that stores non-secret provider metadata only. The Google adapter accepts a provider subject and safe verification metadata; it does not create accounts, store tokens, import cookies, or handle passwords.
+The new identity-session safety layer adds an `IdentityRef`/`IdentityStore` model that stores non-secret provider metadata only. The Google adapter accepts a provider subject and safe verification metadata; it does not create accounts, store tokens, import cookies, or handle passwords. The CLI also includes a one-time installed-app Google OAuth flow using loopback PKCE and `openid email profile` identity scopes; its short-lived token is used in memory to obtain metadata and is not persisted.
 
 The new browser layer adds an ephemeral profile manifest, explicit HTTPS domain allowlist, blocking for embedded URL credentials, localhost/private/link-local/metadata/reserved targets, sensitive Google services, and recovery/password/challenge paths. It supports local URL decisions, Chromium-compatible launch, TTL waiting, process cleanup, profile deletion, and a retained non-secret audit trail. The `run` command can now create this context before the Agent starts, validate the attached identity reference, pass only `AGENTGUARD_*` metadata to the child, and clean the browser context when the Agent exits or TTL expires.
 
@@ -21,6 +21,7 @@ The README, Skill, integration guide, supported-agent matrix, and threat model n
 | Browser session lifecycle tests | Passed: isolated profile, manual handoff signal, cleanup, TTL expiry |
 | Identity metadata tests | Passed: Google reference, secret-field rejection, revoke |
 | Automatic Agent context smoke | Passed: identity validation, non-secret environment handoff, automatic profile cleanup |
+| Google OAuth unit tests | Passed: loopback-only callback, identity scopes only, safe metadata excludes tokens |
 | `git diff --check` | Passed |
 | External design review attempt | ChatGPT returned `429 insufficient_quota`; Gemini returned `503 model unavailable` on this run. No secrets were sent. |
 

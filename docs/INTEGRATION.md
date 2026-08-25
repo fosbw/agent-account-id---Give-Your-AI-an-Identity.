@@ -36,6 +36,18 @@ python adapters/codex_run.py --ttl 1800 --workspace . -- codex
 
 The wrapper does not authenticate Codex, create a user, import cookies, or alter provider settings. It supervises the command the user already installed and authorized.
 
+## Google OAuth identity metadata
+
+For an already provisioned and authorized Google identity, the CLI supports a one-time installed-app OAuth flow with loopback callback, PKCE, and `openid email profile` scopes only:
+
+```bash
+python -m agentguard google-auth \
+  --client-id <installed-app-client-id> \
+  --identity-dir ~/.agentguard/identities
+```
+
+The flow uses Google's normal consent UI, keeps the access token in memory only long enough to obtain identity metadata, and persists only a generated identity reference. It does not create accounts, request Gmail/Drive/admin scopes, persist access or refresh tokens, import cookies, or prove website login. Provider authorization and identity ownership remain external prerequisites.
+
 ## Safe identity reference
 
 Attach only provider-authorized metadata:
