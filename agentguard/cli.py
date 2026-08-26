@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import asdict
@@ -12,7 +13,9 @@ from .browser import BrowserSessionManager
 from .capabilities import CapabilityRegistry
 from .events import EventLog
 from .google_oauth import GoogleOAuthClient, GoogleOAuthConfig
+from .github_provider import GitHubProviderAdapter, GitHubProviderConfig
 from .identity import GoogleIdentityMetadataAdapter, IdentityStore, OperatorAttachedIdentityAdapter
+from .runtime import AccountRuntime
 from .policy import Policy
 from .redaction import Redactor
 from .supervisor import SessionPaths, Supervisor
@@ -103,12 +106,27 @@ def build_parser() -> argparse.ArgumentParser:
     account_revoke.add_argument("--account-dir", type=Path, default=None)
     account_revoke.add_argument("account_id")
     account_caps = account_sub.add_parser("capabilities", help="list provider capabilities")
-    account_caps.add_argument("--provider", choices=("google", "local"), default=None)
+    account_caps.add_argument("--provider", choices=("google", "github", "local"), default=None)
     account_sites = account_sub.add_parser("sites", help="list supported site capability records")
     account_sites.add_argument("--site-id", default=None)
     account_vault = account_sub.add_parser("vault-reference", help="store a non-secret opaque account handle reference")
     account_vault.add_argument("--account-dir", type=Path, default=None)
     account_vault.add_argument("handle")
+
+    github = sub.add_parser("github", help="run an authorized GitHub Provider action")
+    github_sub = github.add_subparsers(dest="github_action", required=True)
+    github_caps = github_sub.add_parser("capabilities", help="show GitHub Provider capability matrix")
+    github_caps.add_argument("--api-base", default=None)
+    github_run = github_sub.add_parser("run", help="run a read-only GitHub Provider action")
+    github_run.add_argument("--agent-id", required=True)
+    github_run.add_argument("--display-name", required=True)
+    github_run.add_argument("--agent-key-stdin", action="store_true", help="read Agent Key from stdin; never pass it as an argument")
+    github_run.add_argument("--installation-id", default=None)
+    github_run.add_argument("--token-env", default="AGENT_ACCOUNT_GITHUB_INSTALLATION_TOKEN")
+    github_run.add_argument("--account-dir", type=Path, default=None)
+    github_run.add_argument("--browser-dir", type=Path, default=None)
+    github_run.add_argument("--ttl", type=float, required=True)
+    github_run.add_argument("--action", choices=("get_authenticated_user", "list_installation_repositories"), default="get_authenticated_user")
 
     browser = sub.add_parser("browser", help="manage an isolated, operator-authorized browser session")
     browser_sub = browser.add_subparsers(dest="browser_action", required=True)
@@ -372,10 +390,15 @@ def cmd_account(args) -> int:
         print(json.dumps([row.safe_metadata() for row in rows], ensure_ascii=False, indent=2))
         return 0
     if args.account_action == "capabilities":
-        providers = [args.provider] if args.provider else ["google", "local"]
+        providers = [args.provider] if args.provider else ["google", "github", "local"]
         rows = []
         for provider in providers:
-            descriptor = GoogleProvider().capabilities() if provider == "google" else LocalManagedAccountProvisioner(Path.home() / ".agentguard" / "accounts").capabilities()
+            if provider == "google":
+                descriptor = GoogleProvider().capabilities()
+            elif provider == "github":
+                descriptor = GitHubProviderAdapter(GitHubProviderConfig.from_environment()).capabilities()
+            else:
+                descriptor = LocalManagedAccountProvisioner(Path.home() / ".agentguard" / "accounts").capabilities()
             rows.append(descriptor.safe_metadata())
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
@@ -421,6 +444,44 @@ def cmd_identity(args) -> int:
         print(json.dumps({"ok": True, "identity_id": args.identity_id, "revoked": True}))
         return 0
     raise SystemExit("unknown identity action")
+
+
+def cmd_github(args) -> int:
+    if args.github_action == "capabilities":
+        config = GitHubProviderConfig(api_base=args.api_base or "https://api.github.com")
+        print(json.dumps({"provider": "github", "config": config.safe_metadata(), "capabilities": GitHubProviderAdapter(config).capabilities().safe_metadata()}, indent=2))
+        return 0
+    if args.github_action != "run":
+        raise SystemExit("unknown github action")
+    if not args.agent_key_stdin:
+        raise SystemExit("github run requires --agent-key-stdin so the Agent Key is not placed in shell history")
+    agent_key = sys.stdin.read().strip()
+    if not agent_key:
+        raise SystemExit("Agent Key stdin was empty")
+    token = os.environ.get(args.token_env)
+    if not token:
+        raise SystemExit(f"GitHub token is not configured in {args.token_env}")
+    config = GitHubProviderConfig(
+        api_base="https://api.github.com",
+        installation_id=args.installation_id or os.environ.get("AGENT_ACCOUNT_GITHUB_INSTALLATION_ID"),
+        token=token,
+    )
+    adapter = GitHubProviderAdapter(config)
+    runtime = AccountRuntime(
+        args.account_dir or Path.home() / ".agent-account-google-id" / "github-runtime",
+        adapter=adapter,
+        browser=BrowserSessionManager(args.browser_dir),
+    )
+    path = runtime.start(
+        agent_key=agent_key,
+        agent_id=args.agent_id,
+        display_name=args.display_name,
+        ttl=args.ttl,
+        allowed_domains=("github.com",),
+        action=args.action,
+    )
+    print(json.dumps(path.safe_metadata(), ensure_ascii=False, indent=2))
+    return 0
 
 
 def cmd_browser_watch(args) -> int:
@@ -523,6 +584,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_identity(args)
     if args.action == "account":
         return cmd_account(args)
+    if args.action == "github":
+        return cmd_github(args)
     if args.action == "google-auth":
         return cmd_google_auth(args)
     if args.action == "browser":

@@ -25,9 +25,9 @@ The current matrix contains **8 named service entries**. They are integration ta
 | 5 | GitLab | GitLab OAuth, OIDC, group SSO, or API | Conditional; depends on the instance or group configuration. |
 | 6 | Atlassian Cloud | OAuth, SAML/SSO, or an official API | Conditional; depends on organization identity settings. |
 | 7 | Linear | Linear OAuth integration or API | Conditional; requires an approved integration. |
-| 8 | GitHub | GitHub OAuth App, GitHub App, or Enterprise SSO | Conditional; GitHub is not advertised as a universal Google-login target. |
+| 8 | GitHub | GitHub OAuth App, GitHub App, or Enterprise SSO | **Implemented for authorized API actions** through `GitHubProviderAdapter`; browser login remains provider-specific. |
 
-The number of services documented is **8**. The number of third-party websites with a fully automated login adapter in the current repository is **0**. The current repository provides the Account Runtime, browser lifecycle, provider capability model, policy layer, and integration contracts; it does not pretend that a provider-specific website login is already implemented when it is not.
+The number of services documented is **8**. The number of third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The number of third-party websites with a fully automated browser-login adapter remains **0**. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; this is a real provider action, not a universal browser-login bridge.
 
 ## What counts as a supported login path
 
@@ -84,6 +84,25 @@ User: Watches the activity and can Pause, Resume, Stop, Cancel, or Kill the run.
 
 Tool: At expiry, stops the task and temporary session data. The persistent Agent Account record is kept unless explicitly revoked.
 ```
+
+## GitHub Provider: the first real provider
+
+GitHub is the first real provider adapter in the project. It links an existing authorized GitHub App installation or caller-owned GitHub token, validates the provider session through the official API, and supports safe read actions such as the authenticated identity and installation repositories. It does not create a GitHub account, import a browser cookie, or pretend that an API token is a universal browser login.
+
+Configure the provider outside the repository:
+
+```bash
+export AGENT_ACCOUNT_GITHUB_INSTALLATION_ID=12345
+export AGENT_ACCOUNT_GITHUB_INSTALLATION_TOKEN='provided-by-your-approved-secret-manager'
+printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id github run \\
+  --agent-id github-agent \\
+  --display-name "GitHub Agent" \\
+  --agent-key-stdin \\
+  --ttl 3600 \\
+  --action get_authenticated_user
+```
+
+The command prints safe Account, Identity, Browser, and Provider Session metadata only. It never prints the GitHub token. The current CLI intentionally supports read-only provider actions; write actions require a separate explicit confirmation path.
 
 ## Current CLI examples
 

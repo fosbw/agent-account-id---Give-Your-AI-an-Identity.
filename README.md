@@ -24,6 +24,7 @@ A task can use a real browser and real Internet only inside an environment owned
 | Agent Account Runtime | Stores non-secret Agent Account records, handles, lifecycle state, provider capability state, and browser-profile references. |
 | Credential boundary | Accepts opaque references only. Passwords, cookies, access tokens, refresh tokens, recovery codes, and private keys are rejected from metadata. |
 | Google identity | Supports the official limited identity OAuth flow and stores identity metadata only. Google account provisioning is reported as unavailable when the provider does not expose that operation. |
+| GitHub Provider | Real GitHub App/OAuth token authentication and read actions through the official REST API; browser login remains provider-specific. |
 | Persistent browser profile | A profile can be attached to an Agent Account and retained between tasks. Timer expiry ends the task/session; it does not delete the account record or persistent profile. |
 | Browser policy | Enforces HTTPS, domain allowlists, blocked sensitive Google areas, and private/local/metadata host blocking. |
 | Live Browser State | Records current URL, page label, current action, login state, verification state, session status, and timer metadata without secrets. |
@@ -158,6 +159,23 @@ agent-account-google-id browser cleanup <browser-session-id>
 ```
 
 The Kill path stops the Agent process group and the tracked browser process. A persistent Agent Account record and persistent profile are not deleted by task TTL. Revocation is a separate account lifecycle operation.
+
+## First real Provider: GitHub
+
+GitHub is the first real provider adapter in this repository. It links an existing authorized GitHub App installation or caller-owned GitHub token through the internal Vault boundary, validates the Provider Session with the official GitHub REST API, and executes safe read actions. It does not create a GitHub account, import browser cookies, or expose the token to the Agent.
+
+```bash
+export AGENT_ACCOUNT_GITHUB_INSTALLATION_ID=12345
+export AGENT_ACCOUNT_GITHUB_INSTALLATION_TOKEN='provided-by-your-approved-secret-manager'
+printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id github run \\
+  --agent-id github-agent \\
+  --display-name "GitHub Agent" \\
+  --agent-key-stdin \\
+  --ttl 3600 \\
+  --action get_authenticated_user
+```
+
+The command prints safe Account, Identity, Browser, and Provider Session metadata only. The current CLI supports read-only provider actions. Any write action must use a separate explicit-confirmation path.
 
 ## Sites and environments
 
