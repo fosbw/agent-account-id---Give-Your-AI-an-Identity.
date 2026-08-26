@@ -7,6 +7,7 @@ from agentguard.accounts import (
     AccountError,
     AccountVault,
     GoogleProvider,
+    GoogleCreatorProvider,
     LocalManagedAccountProvisioner,
     ProviderOperationUnavailable,
 )
@@ -55,12 +56,14 @@ def test_vault_accepts_opaque_handle_and_can_revoke(tmp_path: Path):
         vault.get_reference(reference_id)
 
 
-def test_google_provider_reports_unavailable_account_creation():
+def test_google_provider_capability_and_creator_path_contract(tmp_path: Path):
     provider = GoogleProvider()
+    assert provider.capabilities().account_creation == "supported"
     assert provider.can_create_account() is False
-    assert provider.capabilities().account_creation == "unavailable"
     with pytest.raises(ProviderOperationUnavailable, match="does not expose"):
         provider.create_account("agent-1", "Research Agent")
+    creator = GoogleCreatorProvider(AccountVault(tmp_path / "vault"), headless=True)
+    assert creator.can_create_account() is True
 
 
 def test_provider_capability_matrix_uses_core_operation_names():
@@ -75,7 +78,7 @@ def test_provider_capability_matrix_uses_core_operation_names():
         "ROTATE_CREDENTIAL",
         "VERIFY_STATE",
     }
-    assert matrix["CREATE_ACCOUNT"] == "unavailable"
+    assert matrix["CREATE_ACCOUNT"] == "supported"
     assert matrix["AUTHENTICATE"] == "supported_via_oauth"
 
 

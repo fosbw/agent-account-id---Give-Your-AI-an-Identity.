@@ -15,6 +15,8 @@ from selenium.webdriver.chrome.options import Options
 import random
 from unidecode import unidecode
 
+
+
 T = TypeVar("T")
 
 
@@ -237,22 +239,6 @@ def _safe_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
         clean[str(key)] = value
     return clean
 
-
-
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(
-            provider=self.provider,
-            account_creation="supported_local_only",
-            authentication="supported_local_only",
-            identity_initialization="supported_reference_only",
-            credential_initialization="not_accepted",
-            browser_session="supported",
-            persistent_session="supported",
-            verification="manual_or_provider_signal",
-            recovery="reference_only",
-            credential_rotation="not_accepted",
-            revocation="supported_local_record",
-        )
 class GoogleProvider:
     provider = "google"
 
@@ -339,6 +325,36 @@ class GoogleProvider:
         (self.root / f"{account.account_id}.json").write_text(
             json.dumps(account.safe_metadata(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
+
+class LocalManagedAccountProvisioner:
+    """A real local Account Runtime for development and provider adapters.
+
+    It creates persistent local account records and browser profiles, but it
+    never pretends that a local record is a third-party Google account.
+    """
+
+    provider = "local"
+
+    def __init__(self, root: Path, vault: AccountVault | None = None):
+        self.root = root.expanduser().resolve()
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.vault = vault or AccountVault(self.root / "vault")
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider=self.provider,
+            account_creation="supported_local_only",
+            authentication="supported_local_only",
+            identity_initialization="supported_reference_only",
+            credential_initialization="not_accepted",
+            browser_session="supported",
+            persistent_session="supported",
+            verification="manual_or_provider_signal",
+            recovery="reference_only",
+            credential_rotation="not_accepted",
+            revocation="supported_local_record",
+        )
+
     def can_create_account(self) -> bool:
         return True
 
@@ -419,6 +435,7 @@ class GoogleProvider:
         (self.root / f"{account.account_id}.json").write_text(
             json.dumps(account.safe_metadata(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
+
 class GoogleCreatorProvider(GoogleProvider):
     def __init__(self, vault: AccountVault | None = None, headless: bool = False):
         super().__init__(vault)
