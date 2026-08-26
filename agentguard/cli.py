@@ -19,7 +19,10 @@ from .events import EventLog
 from .google_oauth import GoogleOAuthClient, GoogleOAuthConfig
 from .github_provider import GitHubProviderAdapter, GitHubProviderConfig
 from .identity import GoogleIdentityMetadataAdapter, IdentityStore, OperatorAttachedIdentityAdapter
-from .runtime import AccountRuntime
+from .runtime import AccountRuntime, AgentIdentity
+from .agent_identity import AgentIdentityStore
+from .agent_web_identity import AgentWebIdentity
+from .web_runtime import UniversalWebRuntime, WebActionRequest
 from .policy import Policy
 from .redaction import Redactor
 from .supervisor import SessionPaths, Supervisor
@@ -131,6 +134,27 @@ def build_parser() -> argparse.ArgumentParser:
     github_run.add_argument("--browser-dir", type=Path, default=None)
     github_run.add_argument("--ttl", type=float, required=True)
     github_run.add_argument("--action", choices=("get_authenticated_user", "list_installation_repositories"), default="get_authenticated_user")
+
+    web_identity = sub.add_parser("web-identity", help="use one Agent's safe web identity facade")
+    web_identity_sub = web_identity.add_subparsers(dest="web_identity_action", required=True)
+    web_identity_show = web_identity_sub.add_parser("show", help="show safe Agent Web Identity metadata")
+    web_identity_show.add_argument("--runtime-dir", type=Path, required=True)
+    web_identity_show.add_argument("identity_id")
+    web_identity_permissions = web_identity_sub.add_parser("permissions", help="set explicit safe web permissions for an Agent identity")
+    web_identity_permissions.add_argument("--runtime-dir", type=Path, required=True)
+    web_identity_permissions.add_argument("identity_id")
+    web_identity_permissions.add_argument("--grant", action="append", required=True, dest="permissions")
+    web_identity_exec = web_identity_sub.add_parser("action", help="execute one planner-supplied safe web action")
+    web_identity_exec.add_argument("--runtime-dir", type=Path, required=True)
+    web_identity_exec.add_argument("--browser-dir", type=Path, default=None)
+    web_identity_exec.add_argument("--identity-id", required=True)
+    web_identity_exec.add_argument("--account-handle", required=True)
+    web_identity_exec.add_argument("--session-id", required=True)
+    web_identity_exec.add_argument("--browser-session-name", required=True)
+    web_identity_exec.add_argument("--operation", choices=("navigate", "read", "click", "fill", "select", "submit"), required=True)
+    web_identity_exec.add_argument("--url", default=None)
+    web_identity_exec.add_argument("--selector", default=None)
+    web_identity_exec.add_argument("--value", default=None)
 
     browser = sub.add_parser("browser", help="manage an isolated, operator-authorized browser session")
     browser_sub = browser.add_subparsers(dest="browser_action", required=True)
@@ -511,6 +535,48 @@ def cmd_github(args) -> int:
     return 0
 
 
+def cmd_web_identity(args) -> int:
+    root = args.runtime_dir.expanduser().resolve()
+    identities = AgentIdentityStore(root / "agent-identities")
+    aggregate = identities.get(args.identity_id)
+    identity = AgentIdentity(
+        identity_id=aggregate.identity_id,
+        agent_id=aggregate.agent_id,
+        provider=aggregate.provider,
+        key_fingerprint=aggregate.key_fingerprint,
+        created_at=aggregate.created_at,
+    )
+    if args.web_identity_action in {"show", "permissions"}:
+        manager = BrowserSessionManager(root / "browser-sessions")
+        facade = AgentWebIdentity.from_runtime(
+            identity,
+            root,
+            manager,
+            UniversalWebRuntime(manager, AgentBrowserAutomation("metadata-only")),
+        )
+        if args.web_identity_action == "permissions":
+            print(json.dumps(facade.set_permissions(args.permissions), ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(facade.metadata(), ensure_ascii=False, indent=2))
+        return 0
+    if args.web_identity_action == "action":
+        manager = BrowserSessionManager(args.browser_dir or root / "browser-sessions")
+        browser = AgentBrowserAutomation(args.browser_session_name)
+        try:
+            facade = AgentWebIdentity.from_runtime(
+                identity,
+                root,
+                manager,
+                UniversalWebRuntime(manager, browser),
+            )
+            request = WebActionRequest(args.operation, url=args.url, selector=args.selector, value=args.value)
+            print(json.dumps(facade.execute(args.account_handle, args.session_id, request), ensure_ascii=False, indent=2))
+            return 0
+        finally:
+            browser.close()
+    raise SystemExit("unknown web-identity action")
+
+
 def cmd_browser_watch(args) -> int:
     manager = browser_from(args)
     manifest = manager.get(args.session_id)
@@ -672,6 +738,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_account(args)
     if args.action == "github":
         return cmd_github(args)
+    if args.action == "web-identity":
+        return cmd_web_identity(args)
     if args.action == "google-auth":
         return cmd_google_auth(args)
     if args.action == "browser":

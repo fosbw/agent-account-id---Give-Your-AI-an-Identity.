@@ -33,6 +33,10 @@ The current matrix contains **11 named service entries**.
 
 The number of services documented is **11**. The number of production third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The repository includes **1 public test-site Browser Authentication adapter** and **2 real public test-site browser provisioning adapters**. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; the Demo is intentionally limited to form discovery, login, verification, safe session metadata, and persistent-profile lifecycle testing; Expand Testing and AutomationExercise are intentionally limited to public test-account creation, login, authenticated-page verification, and provider-specific session behavior.
 
+The Universal Web Runtime is a cross-provider mechanics layer, not an additional site count. It supports safe session-bound navigation, page reading, clicking, ordinary field filling, selection, and submission wherever the explicit Browser Session allowlist permits the target. It does not infer provider login selectors, create arbitrary accounts, or turn a Google sign-in button into a universal credential bridge.
+
+The Agent Web Identity facade is the product surface above that mechanics layer. It presents one Agent's safe identity graph, accounts, profiles, sessions, permissions, activity, and memory references to an external planner while enforcing account/session ownership and keeping credentials outside Agent output.
+
 ## What counts as a supported login path
 
 A service is eligible for an adapter when it officially exposes OAuth, OpenID Connect, SSO, or an API that the Agent can use. The adapter must declare its scopes, lifecycle, verification behavior, revocation method, retention, and acceptable-use requirements.
@@ -124,6 +128,33 @@ printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id browser pro
 ```
 
 This command creates an external account in the public practice environment through Chrome, stores the generated credential bundle behind the process-bound Vault, logs in with the account created by the command, verifies `/secure`, and returns safe metadata only. Account records and persistent profiles survive cleanup. The provider reports reauthentication required after process restart because its authentication cookie is process-bound.
+
+## Agent Web Identity and Universal Web Runtime
+
+The facade is intentionally planner-compatible: an external Claude Code, Codex, Gemini, or other planner supplies an action request, while this Tool enforces identity ownership, explicit permissions, the browser allowlist, safe output, and activity recording.
+
+```bash
+agent-account-google-id web-identity permissions \
+  --runtime-dir ./automationexercise-runtime \
+  <identity-id> \
+  --grant web.navigate \
+  --grant web.read \
+  --grant web.interact
+
+agent-account-google-id web-identity show \
+  --runtime-dir ./automationexercise-runtime \
+  <identity-id>
+
+agent-account-google-id web-identity action \
+  --runtime-dir ./automationexercise-runtime \
+  --identity-id <identity-id> \
+  --account-handle agent_account://automationexercise/<account-id> \
+  --session-id <browser-session-id> \
+  --browser-session-name agent-web-identity-session \
+  --operation read
+```
+
+The facade returns opaque identity/account/session handles and redacted web results only. It accepts separate `web.navigate`, `web.read`, and `web.interact` permissions. Passwords, cookies, tokens, raw Provider Session data, and screenshot OCR are not facade outputs. Known credential-entry and authentication states block screenshot capture; this conservative policy does not claim perfect pixel-level detection for arbitrary images.
 
 ## Current CLI examples
 

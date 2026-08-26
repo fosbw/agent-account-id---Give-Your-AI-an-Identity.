@@ -18,6 +18,12 @@ The browser layer supports isolated ephemeral profiles and persistent profiles a
 
 The browser policy enforces HTTPS, explicit domain allowlists, blocked sensitive Google areas, credentials-in-URL blocking, and private/local/link-local/metadata host blocking. The browser runtime can record safe browser state and real verification states such as email, phone, OTP, MFA, CAPTCHA, provider-blocked, or completed. It never bypasses a challenge.
 
+The Universal Web Runtime adds provider-neutral `navigate`, `read`, `click`, `fill`, `select`, and `submit` mechanics. It reuses Browser Session Manager policy, records safe state, redacts page text, blocks secret-looking selectors, and returns `SafeWebResult`. It intentionally does not pretend that signup or login selectors are universal; those remain provider-adapter responsibilities.
+
+The Agent Identity Aggregate persists a safe graph for one stable Agent identity: account handles, browser-profile references, opaque credential references, provider-session metadata, explicit permissions, bounded activity history, memory references, and lifetime state. It does not persist raw passwords, cookies, tokens, or credential-bearing browser state. The Agent Web Identity facade loads this graph, enforces Agent/account/session ownership, checks permissions, delegates actions to Universal Web Runtime, and records safe activity. The planner remains external.
+
+The Security Boundary centralizes nested redaction, safe object handling, cross-Agent ownership checks, secret-bearing metadata rejection, and screenshot blocking during authentication or credential-entry states. Screenshot policy is deliberately conservative: the runtime blocks capture in known credential phases; it does not claim pixel-perfect OCR or image redaction.
+
 The Browser Authentication Runtime provides a generic `LoginRequest`, `LoginAdapter`, and `BrowserAutomation` boundary. It accepts only an Agent Account handle and target from the Agent, obtains provider credentials through the process-bound Vault interface, discovers the login form, fills and submits inside the isolated browser, verifies success, persists safe Provider Session metadata, updates login/verification/browser state, and returns `SafeAuthenticationState`. The first authentication integration is `DemoLoginAdapter` for the public `the-internet.herokuapp.com/login` test site; the Demo is an adapter test, not the architecture.
 
 The Account Provisioning Runtime adds the missing external-account stage. `AccountNamingPolicy` creates a deterministic provider-valid identity from organization, Agent, provider, and stable Agent identifier inputs without embedding the Agent Key. `ExpandTestingProvider` is a real browser-only integration for the public Automation Testing Practice environment: it creates an external test account through signup, stores the generated credential bundle behind the internal Vault boundary, logs in with the account created by the tool, verifies `/secure`, and records a harmless authenticated-page read. Its site uses process-bound session cookies, so capability metadata reports reauthentication required after a complete browser process restart; Account Record and Profile retention are still preserved.
@@ -38,6 +44,8 @@ agent-account-google-id browser state
 agent-account-google-id browser verification
 agent-account-google-id browser authenticate --account-handle ... --target ... --install-demo-credentials
 agent-account-google-id browser provision --organization-id ... --agent-id ... --stable-agent-id ... --agent-key-stdin
+agent-account-google-id web-identity show --runtime-dir ... <identity-id>
+agent-account-google-id web-identity action --runtime-dir ... --identity-id ... --account-handle ... --session-id ... --browser-session-name ... --operation read
 agent-account-google-id run --account-id ... --persistent-profile ...
 ```
 
@@ -49,8 +57,8 @@ The repository documentation is in English and uses the product name: README, Sk
 
 | Check | Result |
 |---|---|
-| Unit and lifecycle tests | 32 passed |
-| Python compilation | Passed for `agentguard`, `adapters`, and tests |
+| Unit and lifecycle tests | **46 passed** |
+| Python compilation | Passed for `agentguard`, `adapters`, tests, and live-validation scripts |
 | Existing Supervisor tests | Passed |
 | Browser URL policy tests | Passed |
 | Browser lifecycle tests | Passed |
@@ -64,6 +72,11 @@ The repository documentation is in English and uses the product name: README, Sk
 | Editable package installation | Passed earlier for product command |
 | `agent-account-google-id --help` | Passed; includes Account and Browser commands |
 | Browser Authentication unit tests | Passed: Vault isolation, form detection, safe state, Provider Session persistence, failure state, Kill/Cleanup revocation, and same-profile restart |
+| Agent Identity Aggregate tests | Passed: safe graph persistence, ownership rejection, safe session metadata, permissions, activity, and memory references |
+| Security Boundary tests | Passed: nested password/token/secret/cookie/bearer redaction, Browser Authentication safe page-label redaction, cross-Agent account rejection, and screenshot blocking during auth/credential phases |
+| Agent Web Identity integration tests | Passed: safe read/action result, explicit permission enforcement, activity recording, and browser-session ownership rejection |
+| Universal Web Runtime live test | **Passed live** in isolated Chrome: `https://example.com/` navigate plus rendered-page read; output contained safe page text only |
+| Agent Web Identity CLI smoke test | Passed: parser and help expose `permissions`, `show`, and `action` facade commands |
 | Account Provisioning unit tests | Passed: deterministic naming, external-account/Vault/Profile linkage, safe authenticated action, Kill preservation, and Provider Session revocation |
 | Real second-provider Full Flow | **Passed live**: AutomationExercise signup -> external account creation -> logout -> Vault-backed login -> authenticated home-page read -> Kill -> new browser process -> same Account/Profile -> authenticated action without credential injection |
 | Generic-runtime comparison | **Passed live across two different providers**: the generic Provisioning/Authentication/Profile/Session lifecycle was reused; provider-specific code remained in each adapter's normal form handling and success markers |
@@ -80,4 +93,4 @@ The repository does not claim to create or distribute consumer Google accounts, 
 
 Command matching is a guardrail, not a complete sandbox. Browser URL decisions are a policy layer, not a browser extension, proxy, or OS egress firewall. Strong isolation requires a user-controlled container or VM plus OS-level egress controls.
 
-The current Live View is local and text/event based. It can expose safe browser state, but it is not a hosted remote video stream. Browser launch requires a Chromium-compatible executable in the user's environment. Persistent browser profiles require suitable local storage and one active browser session per profile. Browser Authentication currently has one Demo integration and one real public test-site provisioning integration; other providers need their own authorized LoginAdapter, provisioning adapter, and capability declaration. The current AccountVault is process-bound and intentionally does not persist raw passwords to disk.
+The current Live View is local and text/event based. It can expose safe browser state, but it is not a hosted remote video stream. Browser launch requires a Chromium-compatible executable in the user's environment. Persistent browser profiles require suitable local storage and one active browser session per profile. Browser Authentication currently has one Demo integration and two real public test-site provisioning integrations; other providers need their own authorized LoginAdapter, provisioning adapter, and capability declaration. The current AccountVault is process-bound and intentionally does not persist raw passwords to disk. The Universal Web Runtime is general for browser mechanics, not a universal signup/login engine. Screenshot protection blocks known credential-entry phases but cannot promise perfect pixel-level secret detection in arbitrary page images.

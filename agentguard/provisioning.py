@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .accounts import AccountError, AccountVault, AgentAccount
+from .agent_identity import AgentIdentityStore
 from .browser import BrowserSessionManager, BrowserSessionManifest
 from .browser_auth import BrowserAuthenticationRuntime, BrowserAutomation, LoginRequest, SafeAuthenticationState
 from .provider import ProviderSession
@@ -117,6 +118,7 @@ class AccountProvisioningRuntime:
         self.browser = browser or BrowserSessionManager(self.root / "browser-sessions")
         self.vault = vault or AccountVault(self.root / "credential-vault")
         self.accounts = AccountStore(self.root / "account-records")
+        self.agent_identities = AgentIdentityStore(self.root / "agent-identities")
 
     def provision(
         self,
@@ -140,6 +142,12 @@ class AccountProvisioningRuntime:
             request.stable_agent_id,
         )
         account_id = "acct-" + stable_name
+        identity_graph = self.agent_identities.create(
+            identity.identity_id,
+            identity.agent_id,
+            identity.provider,
+            identity.key_fingerprint,
+        )
         account = AgentAccount(
             account_id=account_id,
             handle=f"agent_account://{request.provider}/{account_id}",
@@ -155,6 +163,8 @@ class AccountProvisioningRuntime:
         self.accounts.save(account)
         profile_dir = self.browser.root / "profiles" / account.account_id
         account.browser_profile = str(profile_dir.resolve())
+        identity_graph.register_account(account.handle, account.browser_profile)
+        self.agent_identities.save(identity_graph)
         browser_manifest = self.browser.create(
             ttl=ttl,
             allowed_domains=(self.adapter.target,),
@@ -167,6 +177,9 @@ class AccountProvisioningRuntime:
         try:
             external = self.adapter.create_external_account(account, request, self.vault, browser)
             account.external_account_ref = external.external_account_ref
+            identity_graph.register_account(account.handle, account.browser_profile, external.credential_ref)
+            identity_graph.add_activity("external account provisioned", result="completed")
+            self.agent_identities.save(identity_graph)
             account.verification_state = "completed" if external.verified else "provider_state_required"
             account.session_state = "initialized"
             account.state = "external_account_created"
@@ -190,6 +203,9 @@ class AccountProvisioningRuntime:
             )
             account.session_state = "active"
             account.state = "active"
+            identity_graph.register_session(authentication.to_dict())
+            identity_graph.add_activity("authenticated page read", browser_manifest.session_id, "completed")
+            self.agent_identities.save(identity_graph)
             account.updated_at = time.time()
             self.accounts.save(account)
             return ProvisionedPath(identity, account, external, self.browser.get(browser_manifest.session_id), authentication)

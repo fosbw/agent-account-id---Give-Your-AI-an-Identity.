@@ -22,8 +22,11 @@ A task can use a real browser and real Internet only inside an environment owned
 |---|---|
 | Agent supervision | Runs a user-owned Agent under a wall-clock TTL and process-group control. |
 | Agent Account Runtime | Stores non-secret Agent Account records, handles, lifecycle state, provider capability state, and browser-profile references. |
+| Agent Identity Aggregate | Persists one safe identity graph containing Agent identity, account handles, browser-profile references, opaque credential references, provider-session metadata, permissions, activity history, memory references, and lifetime state. |
+| Agent Web Identity | Provides one planner-facing facade that combines identity, accounts, browser sessions, permissions, safe activity, and web actions without embedding a planner or exposing secrets. |
+| Universal Web Runtime | Provides provider-neutral navigate, read, click, fill, select, and submit mechanics under the existing browser allowlist; provider adapters remain responsible for signup and login selectors. |
 | Real Account Provisioning | Provides a generic provisioning runtime and one real public test-site adapter (`ExpandTestingProvider`) that creates an external test account in Chrome before authentication. |
-| Credential boundary | Accepts provider secrets only through an internal process-bound interface; public metadata, Agent output, logs, and Live State expose opaque references and safe status only. |
+| Credential boundary | Accepts provider secrets only through an internal process-bound interface; public metadata, Agent output, logs, and Live State expose opaque references and safe status only. Nested safe outputs redact password, token, secret, bearer, and cookie values, and screenshot capture is blocked during authentication or credential-entry states. |
 | Google identity | Supports the official limited identity OAuth flow and stores identity metadata only. Google account provisioning is reported as unavailable when the provider does not expose that operation. |
 | GitHub Provider | Real GitHub App/OAuth token authentication and read actions through the official REST API; browser login remains provider-specific. |
 | Expand Testing Provider | Real browser signup, credential placement through the internal Vault boundary, login, authenticated-page verification, and harmless page reading on the public practice environment. |
@@ -73,6 +76,33 @@ agent-account-google-id run \
 ```
 
 The Agent receives opaque `AGENTGUARD_*` session variables and account identifiers. It does not receive raw credentials.
+
+## Agent Web Identity
+
+`Agent Web Identity` is the product-facing facade for an Agent that needs a durable web presence. It loads the safe identity aggregate, verifies that the requested Account Record and Browser Session belong to the same Agent identity, checks explicit permissions, delegates browser mechanics to the Universal Web Runtime, and records a bounded redacted activity history. Claude Code, Codex, Gemini, or another external planner can submit an action; the Tool does not contain or replace that planner.
+
+```bash
+agent-account-google-id web-identity permissions \
+  --runtime-dir ./automationexercise-runtime \
+  <identity-id> \
+  --grant web.navigate \
+  --grant web.read \
+  --grant web.interact
+
+agent-account-google-id web-identity show \
+  --runtime-dir ./automationexercise-runtime \
+  <identity-id>
+
+agent-account-google-id web-identity action \
+  --runtime-dir ./automationexercise-runtime \
+  --identity-id <identity-id> \
+  --account-handle agent_account://automationexercise/<account-id> \
+  --session-id <browser-session-id> \
+  --browser-session-name agent-web-identity-session \
+  --operation read
+```
+
+The facade returns an identity handle, opaque account/session references, safe page state, action result, permissions, memory references, lifetime metadata, and activity entries. It never provides a password, cookie, token, screenshot OCR, or raw browser credential state. The facade is an explicit-permission surface: `web.navigate`, `web.read`, and `web.interact` are separate permissions, with `web.*` available only when explicitly granted.
 
 ## Create and inspect an Agent Account record
 
@@ -162,6 +192,12 @@ agent-account-google-id browser cleanup <browser-session-id>
 ```
 
 The Kill path stops the Agent process group and the tracked browser process. A persistent Agent Account record and persistent profile are not deleted by task TTL. Revocation is a separate account lifecycle operation.
+
+## Universal Web Runtime
+
+The Universal Web Runtime is the provider-neutral browser mechanics layer below the Agent Web Identity facade. A planner can request `navigate`, `read`, `click`, `fill`, `select`, or `submit` using a session-bound action request. The runtime applies the Browser Session Manager allowlist, records safe Browser State, redacts page content, blocks secret-looking selectors, and returns `SafeWebResult`. It does not attempt universal account creation or universal login; provider-specific adapters retain responsibility for site-specific forms and authentication.
+
+A real isolated Chrome test against `https://example.com/` passed for navigation and rendered-page reading. This proves the generic browser mechanics path only; it does not prove authentication, account provisioning, or production-site support.
 
 ## Browser Authentication Runtime
 
@@ -256,7 +292,7 @@ The tool does not create or distribute consumer accounts, bypass CAPTCHA/MFA/ant
 ## Development and tests
 
 ```bash
-python3 -m compileall -q agentguard adapters tests
+python3 -m compileall -q agentguard adapters tests scripts
 python3 -m pytest -q
 python3 -m compileall -q agentguard adapters
 python3 -m agentguard --help
@@ -265,7 +301,7 @@ python3 -m agentguard --help
 ## Repository layout
 
 ```text
-agentguard/          Account Runtime, identity, browser, supervisor, policy, events, and redaction
+agentguard/          Account Runtime, identity aggregate, web identity, browser, supervisor, policy, events, and redaction
 adapters/            Claude Code and Codex adapters
 skill/               Chat-invocable Agent Account Google ID skill
 tests/               Unit and lifecycle tests

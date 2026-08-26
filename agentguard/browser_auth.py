@@ -13,6 +13,7 @@ from typing import Any, Callable, Protocol
 from .accounts import AccountError, AccountVault
 from .browser import BrowserSessionManager
 from .provider import ProviderSession
+from .redaction import Redactor
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,9 @@ class BrowserAutomation(Protocol):
         ...
 
     def check(self, selector: str) -> None:
+        ...
+
+    def click(self, selector: str) -> None:
         ...
 
     def submit(self, selector: str) -> None:
@@ -137,7 +141,7 @@ class BrowserAuthenticationRuntime:
         if not text:
             return None
         first = re.sub(r"\s+", " ", text).strip()
-        return first[:128] or None
+        return Redactor().redact_text(first)[:128] or None
 
 
 class AgentBrowserAutomation:
@@ -195,8 +199,11 @@ class AgentBrowserAutomation:
     def check(self, selector: str) -> None:
         self._run("check", selector)
 
-    def submit(self, selector: str) -> None:
+    def click(self, selector: str) -> None:
         self._run("click", selector)
+
+    def submit(self, selector: str) -> None:
+        self.click(selector)
 
     def press(self, key: str) -> None:
         self._run("press", key)
