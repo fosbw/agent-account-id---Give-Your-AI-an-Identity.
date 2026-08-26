@@ -69,6 +69,7 @@ class AgentAccount:
     verification_state: str = "not_started"
     session_state: str = "not_started"
     authorization_basis: str = "provider_authorized"
+    external_account_ref: str | None = None
 
     def safe_metadata(self) -> dict:
         return asdict(self)

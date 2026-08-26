@@ -63,6 +63,12 @@ class BrowserAutomation(Protocol):
     def submit(self, selector: str) -> None:
         ...
 
+    def press(self, key: str) -> None:
+        ...
+
+    def wait_for_load(self) -> None:
+        ...
+
     def current_url(self) -> str:
         ...
 
@@ -138,8 +144,8 @@ class AgentBrowserAutomation:
         self.profile_dir: Path | None = None
 
     def _run(self, *args: str, stdin: str | None = None) -> str:
-        command = [self.executable, "--session", self.session_name]
-        if self.profile_dir is not None:
+        command = [self.executable, "--session-name", self.session_name]
+        if self.profile_dir is not None and args and args[0] == "open":
             command.extend(["--profile", str(self.profile_dir)])
         command.extend(args)
         try:
@@ -179,6 +185,12 @@ class AgentBrowserAutomation:
 
     def submit(self, selector: str) -> None:
         self._run("click", selector)
+
+    def press(self, key: str) -> None:
+        self._run("press", key)
+
+    def wait_for_load(self) -> None:
+        self._run("wait", "--load", "domcontentloaded")
 
     def current_url(self) -> str:
         return self._run("get", "url")

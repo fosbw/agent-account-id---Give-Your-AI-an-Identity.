@@ -11,6 +11,8 @@ from pathlib import Path
 from .accounts import AccountVault, GoogleProvider, LocalManagedAccountProvisioner
 from .browser import BrowserSessionManager
 from .browser_auth import AgentBrowserAutomation, BrowserAuthenticationRuntime, DemoCredentialProvider, DemoLoginAdapter, LoginRequest
+from .expandtesting_provider import ExpandTestingProvider
+from .provisioning import AccountProvisioningRuntime, ProvisioningRequest
 from .capabilities import CapabilityRegistry
 from .events import EventLog
 from .google_oauth import GoogleOAuthClient, GoogleOAuthConfig
@@ -179,6 +181,19 @@ def build_parser() -> argparse.ArgumentParser:
     browser_state.add_argument("--url", required=True)
     browser_state.add_argument("--page", default=None)
     browser_state.add_argument("--action", dest="browser_action_label", default="observed")
+
+    browser_provision = browser_sub.add_parser("provision", help="create and authenticate a real public test account in an isolated browser")
+    browser_provision.add_argument("--runtime-dir", type=Path, default=None)
+    browser_provision.add_argument("--browser-dir", type=Path, default=None)
+    browser_provision.add_argument("--vault-dir", type=Path, default=None)
+    browser_provision.add_argument("--organization-id", required=True)
+    browser_provision.add_argument("--agent-id", required=True)
+    browser_provision.add_argument("--display-name", required=True)
+    browser_provision.add_argument("--stable-agent-id", default=None)
+    browser_provision.add_argument("--provider", choices=("expandtesting",), default="expandtesting")
+    browser_provision.add_argument("--ttl", type=float, required=True)
+    browser_provision.add_argument("--browser-session-name", required=True)
+    browser_provision.add_argument("--agent-key-stdin", action="store_true", help="read Agent Key from stdin; never pass it as an argument")
 
     browser_auth = browser_sub.add_parser("authenticate", help="authenticate an Agent Account inside an isolated browser session")
     browser_auth.add_argument("--browser-dir", type=Path, default=None)
@@ -528,6 +543,35 @@ def cmd_browser_watch(args) -> int:
         time.sleep(0.25)
 
 
+def cmd_browser_provision(args) -> int:
+    if not args.agent_key_stdin:
+        raise SystemExit("browser provision requires --agent-key-stdin")
+    agent_key = sys.stdin.read().strip()
+    if not agent_key:
+        raise SystemExit("Agent Key stdin was empty")
+    runtime_dir = args.runtime_dir or Path.home() / ".agent-account-google-id" / "expandtesting-runtime"
+    manager = BrowserSessionManager(args.browser_dir or runtime_dir / "browser-sessions")
+    vault = AccountVault(args.vault_dir or runtime_dir / "credential-vault")
+    provider = ExpandTestingProvider()
+    request = ProvisioningRequest(
+        organization_id=args.organization_id,
+        agent_id=args.agent_id,
+        provider=args.provider,
+        display_name=args.display_name,
+        stable_agent_id=args.stable_agent_id,
+    )
+    runtime = AccountProvisioningRuntime(runtime_dir, provider, browser=manager, vault=vault)
+    path = runtime.provision(
+        agent_key,
+        request,
+        args.ttl,
+        args.browser_session_name,
+        lambda name: AgentBrowserAutomation(name),
+    )
+    print(json.dumps(path.safe_metadata(), ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_browser_authenticate(args) -> int:
     manager = browser_from(args)
     manifest = manager.get(args.session_id)
@@ -587,6 +631,8 @@ def cmd_browser(args) -> int:
         manager.mark_manual_login_complete(args.session_id, args.domain)
         print(json.dumps({"ok": True, "event": "browser.login_manual_signal", "domain": args.domain, "verified": False}))
         return 0
+    if args.browser_action == "provision":
+        return cmd_browser_provision(args)
     if args.browser_action == "authenticate":
         return cmd_browser_authenticate(args)
     if args.browser_action == "state":

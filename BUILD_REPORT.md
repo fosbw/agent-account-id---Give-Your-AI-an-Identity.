@@ -14,11 +14,13 @@ The Core Runtime adds a separate `ProviderAdapter`, `ProviderSession`, `AgentIde
 
 The provider model exposes capability discovery for account creation, identity initialization, credential initialization, browser sessions, persistent sessions, verification, recovery, rotation, and revocation. The Google provider reports third-party account provisioning as unavailable when the provider does not expose that operation. It does not ask for a user's personal account as a silent fallback.
 
-The browser layer supports isolated ephemeral profiles and persistent profiles attached to an Agent Account. A task TTL ends the current task and browser process without deleting a persistent Account record or persistent profile. Browser manifests now include account ID, persistence state, login state, verification state, current URL, current page, and current action.
+The browser layer supports isolated ephemeral profiles and persistent profiles attached to an Agent Account. A task TTL ends the current task and browser process without deleting a persistent Account record or persistent profile. Browser manifests now include account ID, persistence state, login state, verification state, current URL, current page, and current action. The real provisioning path uses a dedicated persistent profile for the externally created test account.
 
 The browser policy enforces HTTPS, explicit domain allowlists, blocked sensitive Google areas, credentials-in-URL blocking, and private/local/link-local/metadata host blocking. The browser runtime can record safe browser state and real verification states such as email, phone, OTP, MFA, CAPTCHA, provider-blocked, or completed. It never bypasses a challenge.
 
-The Browser Authentication Runtime provides a generic `LoginRequest`, `LoginAdapter`, and `BrowserAutomation` boundary. It accepts only an Agent Account handle and target from the Agent, obtains provider credentials through the process-bound Vault interface, discovers the login form, fills and submits inside the isolated browser, verifies success, persists safe Provider Session metadata, updates login/verification/browser state, and returns `SafeAuthenticationState`. The first integration is `DemoLoginAdapter` for the public `the-internet.herokuapp.com/login` test site; the Demo is an adapter test, not the architecture.
+The Browser Authentication Runtime provides a generic `LoginRequest`, `LoginAdapter`, and `BrowserAutomation` boundary. It accepts only an Agent Account handle and target from the Agent, obtains provider credentials through the process-bound Vault interface, discovers the login form, fills and submits inside the isolated browser, verifies success, persists safe Provider Session metadata, updates login/verification/browser state, and returns `SafeAuthenticationState`. The first authentication integration is `DemoLoginAdapter` for the public `the-internet.herokuapp.com/login` test site; the Demo is an adapter test, not the architecture.
+
+The Account Provisioning Runtime adds the missing external-account stage. `AccountNamingPolicy` creates a deterministic provider-valid identity from organization, Agent, provider, and stable Agent identifier inputs without embedding the Agent Key. `ExpandTestingProvider` is a real browser-only integration for the public Automation Testing Practice environment: it creates an external test account through signup, stores the generated credential bundle behind the internal Vault boundary, logs in with the account created by the tool, verifies `/secure`, and records a harmless authenticated-page read. Its site uses process-bound session cookies, so capability metadata reports reauthentication required after a complete browser process restart; Account Record and Profile retention are still preserved.
 
 The CLI includes:
 
@@ -33,6 +35,7 @@ agent-account-google-id browser create --account-id ... --persistent-profile
 agent-account-google-id browser state
 agent-account-google-id browser verification
 agent-account-google-id browser authenticate --account-handle ... --target ... --install-demo-credentials
+agent-account-google-id browser provision --organization-id ... --agent-id ... --stable-agent-id ... --agent-key-stdin
 agent-account-google-id run --account-id ... --persistent-profile ...
 ```
 
@@ -44,7 +47,7 @@ The repository documentation is in English and uses the product name: README, Sk
 
 | Check | Result |
 |---|---|
-| Unit and lifecycle tests | 28 passed |
+| Unit and lifecycle tests | 32 passed |
 | Python compilation | Passed for `agentguard`, `adapters`, and tests |
 | Existing Supervisor tests | Passed |
 | Browser URL policy tests | Passed |
@@ -59,15 +62,18 @@ The repository documentation is in English and uses the product name: README, Sk
 | Editable package installation | Passed earlier for product command |
 | `agent-account-google-id --help` | Passed; includes Account and Browser commands |
 | Browser Authentication unit tests | Passed: Vault isolation, form detection, safe state, Provider Session persistence, failure state, Kill/Cleanup revocation, and same-profile restart |
+| Account Provisioning unit tests | Passed: deterministic naming, external-account/Vault/Profile linkage, safe authenticated action, Kill preservation, and Provider Session revocation |
+| Real external account provisioning flow | **Passed through authenticated post-signup action**: Expand Testing signup -> account-created redirect -> login -> `/secure` -> safe page read |
+| Real process-restart session recovery | **Blocked by provider behavior**: Expand Testing uses process-bound session cookies; Account and Profile survive, but authenticated state is not restored without reauthentication |
 | Real public Demo CLI lifecycle | Passed: create -> discover/fill/submit/verify -> safe state -> Provider Session -> cleanup/Kill -> new session -> same Account/Profile -> authenticate again |
 | `git diff --check` | Passed |
 
 ## Deliberately unavailable provider operations
 
-The repository does not claim to create or distribute consumer Google accounts, operate a shared account pool, import cookies, retrieve passwords or recovery codes, bypass MFA/CAPTCHA, or provide unrestricted cross-site login. The Google provider reports unavailable operations clearly. Provider-specific credentials are accepted only through internal adapter boundaries and raw values remain process-bound; a production deployment should replace that boundary with an approved external secret manager. The Core end-to-end test uses `TestProviderAdapter`, while the Browser Authentication test uses a narrowly scoped public Demo adapter and a real public-site CLI run.
+The repository does not claim to create or distribute consumer Google accounts, operate a shared account pool, import cookies, retrieve passwords or recovery codes, bypass MFA/CAPTCHA, or provide unrestricted cross-site login. The Google provider reports unavailable operations clearly. Provider-specific credentials are accepted only through internal adapter boundaries and raw values remain process-bound; a production deployment should replace that boundary with an approved external secret manager. The Core end-to-end test uses `TestProviderAdapter`, while the Browser Authentication test uses a narrowly scoped public Demo adapter and a real public-site CLI run. The real provisioning proof uses only the public Expand Testing practice environment and does not claim production-provider support.
 
 ## Known limitations
 
 Command matching is a guardrail, not a complete sandbox. Browser URL decisions are a policy layer, not a browser extension, proxy, or OS egress firewall. Strong isolation requires a user-controlled container or VM plus OS-level egress controls.
 
-The current Live View is local and text/event based. It can expose safe browser state, but it is not a hosted remote video stream. Browser launch requires a Chromium-compatible executable in the user's environment. Persistent browser profiles require suitable local storage and one active browser session per profile. Browser Authentication currently has one Demo integration; other providers need their own authorized LoginAdapter and capability declaration.
+The current Live View is local and text/event based. It can expose safe browser state, but it is not a hosted remote video stream. Browser launch requires a Chromium-compatible executable in the user's environment. Persistent browser profiles require suitable local storage and one active browser session per profile. Browser Authentication currently has one Demo integration and one real public test-site provisioning integration; other providers need their own authorized LoginAdapter, provisioning adapter, and capability declaration. The current AccountVault is process-bound and intentionally does not persist raw passwords to disk.

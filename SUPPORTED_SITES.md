@@ -14,7 +14,8 @@ The Agent calls the tool. The tool checks the Agent identity and capabilities, c
 
 ## The site list
 
-The current matrix contains **9 named service entries**. They are integration targets with explicit provider conditions. A named site is not automatically a working login adapter just because it has a Google sign-in button.
+The current matrix contains **10 named service entries**.
+ They are integration targets with explicit provider conditions. A named site is not automatically a working login adapter just because it has a Google sign-in button.
 
 | # | Service | Official path that may be used | Current status |
 |---:|---|---|---|
@@ -27,8 +28,9 @@ The current matrix contains **9 named service entries**. They are integration ta
 | 7 | Linear | Linear OAuth integration or API | Conditional; requires an approved integration. |
 | 8 | GitHub | GitHub OAuth App, GitHub App, or Enterprise SSO | **Implemented for authorized API actions** through `GitHubProviderAdapter`; browser login remains provider-specific. |
 | 9 | Public login demo (`the-internet.herokuapp.com`) | Site-published demo credentials through the scoped Browser Authentication Runtime | **Implemented as a public test integration only** through `DemoLoginAdapter`; not a production provider or universal login bridge. |
+| 10 | Expand Testing practice (`practice.expandtesting.com`) | Real browser signup and login in the public automation-testing environment | **Implemented as the first real browser provisioning test provider** through `ExpandTestingProvider`; creates an external test account, stores credentials behind the internal Vault boundary, verifies `/secure`, and records a process-bound session recovery limitation. |
 
-The number of services documented is **9**. The number of production third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The repository also includes **1 public test-site Browser Authentication adapter** for the documented Demo flow. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; the Demo is intentionally limited to form discovery, login, verification, safe session metadata, and persistent-profile lifecycle testing.
+The number of services documented is **10**. The number of production third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The repository includes **1 public test-site Browser Authentication adapter** and **1 real public test-site browser provisioning adapter**. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; the Demo is intentionally limited to form discovery, login, verification, safe session metadata, and persistent-profile lifecycle testing; Expand Testing is intentionally limited to public test-account creation, login, authenticated-page verification, and safe provider-limitation reporting.
 
 ## What counts as a supported login path
 
@@ -68,7 +70,8 @@ You need Python 3.10 or newer, Git, a supported Agent or local command, a worksp
 
 For Google OAuth, you need an Installed-App OAuth Client and a Google identity that is already owned and authorized by the operator or organization. The current flow requests identity scopes only and does not create a Google account or request Gmail, Drive, recovery, payment, or administration access.
 
-For a production external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. The public Demo integration is a test-only exception with site-published credentials held inside the process-bound Vault. Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
+For a production external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. The public Demo integration is a test-only exception with site-published credentials held inside the process-bound Vault. The Expand Testing integration is also test-only: the tool generates a provider-valid username and password, creates the external practice account through Chrome, then authenticates and reads the protected page. Its session cookies are process-bound and are not treated as persistent authentication after a complete process restart.
+ Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
 
 ## The one-command workflow
 
@@ -104,6 +107,22 @@ printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id github run 
 ```
 
 The command prints safe Account, Identity, Browser, and Provider Session metadata only. It never prints the GitHub token. The current CLI intentionally supports read-only provider actions; write actions require a separate explicit confirmation path.
+
+## Real browser account provisioning test
+
+```bash
+printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id browser provision \\
+  --runtime-dir ./expandtesting-runtime \\
+  --organization-id acme-test \\
+  --agent-id research-agent \\
+  --display-name "Research Agent Test" \\
+  --stable-agent-id live-acceptance-unique-id \\
+  --ttl 300 \\
+  --browser-session-name expandtesting-provision-session \\
+  --agent-key-stdin
+```
+
+This command creates an external account in the public practice environment through Chrome, stores the generated credential bundle behind the process-bound Vault, logs in with the account created by the command, verifies `/secure`, and returns safe metadata only. Account records and persistent profiles survive cleanup. The provider reports reauthentication required after process restart because its authentication cookie is process-bound.
 
 ## Current CLI examples
 

@@ -22,9 +22,11 @@ A task can use a real browser and real Internet only inside an environment owned
 |---|---|
 | Agent supervision | Runs a user-owned Agent under a wall-clock TTL and process-group control. |
 | Agent Account Runtime | Stores non-secret Agent Account records, handles, lifecycle state, provider capability state, and browser-profile references. |
+| Real Account Provisioning | Provides a generic provisioning runtime and one real public test-site adapter (`ExpandTestingProvider`) that creates an external test account in Chrome before authentication. |
 | Credential boundary | Accepts provider secrets only through an internal process-bound interface; public metadata, Agent output, logs, and Live State expose opaque references and safe status only. |
 | Google identity | Supports the official limited identity OAuth flow and stores identity metadata only. Google account provisioning is reported as unavailable when the provider does not expose that operation. |
 | GitHub Provider | Real GitHub App/OAuth token authentication and read actions through the official REST API; browser login remains provider-specific. |
+| Expand Testing Provider | Real browser signup, credential placement through the internal Vault boundary, login, authenticated-page verification, and harmless page reading on the public practice environment. |
 | Persistent browser profile | A profile can be attached to an Agent Account and retained between tasks. Timer expiry ends the task/session; it does not delete the account record or persistent profile. |
 | Browser policy | Enforces HTTPS, domain allowlists, blocked sensitive Google areas, and private/local/metadata host blocking. |
 | Live Browser State | Records current URL, page label, current action, login state, verification state, session status, and timer metadata without secrets. |
@@ -164,7 +166,7 @@ The Kill path stops the Agent process group and the tracked browser process. A p
 
 The Browser Authentication Runtime is the generic layer between an Agent Account handle and a provider-specific login adapter. The Agent sends only `account_handle` and `target`; the runtime obtains the provider credential from the internal Vault boundary, discovers the login form, fills and submits it inside the isolated browser, verifies the resulting page state, records a safe Provider Session, and returns safe authentication metadata. Passwords, cookies, and tokens are not returned to the Agent, written to event logs, or included in Live State.
 
-The first integration is intentionally scoped to the public test site `the-internet.herokuapp.com`. Its site-published demo credentials are supplied to the internal process boundary through `AGENT_ACCOUNT_DEMO_USERNAME` and `AGENT_ACCOUNT_DEMO_PASSWORD`, then installed into the in-memory Vault with `--install-demo-credentials`; they are never accepted as command-line arguments or returned to the Agent. The project CLI path is:
+The first authentication integration is intentionally scoped to the public test site `the-internet.herokuapp.com`. Its site-published demo credentials are supplied to the internal process boundary through `AGENT_ACCOUNT_DEMO_USERNAME` and `AGENT_ACCOUNT_DEMO_PASSWORD`, then installed into the in-memory Vault with `--install-demo-credentials`; they are never accepted as command-line arguments or returned to the Agent. The project CLI path is:
 
 ```bash
 agent-account-google-id browser authenticate \\
@@ -178,6 +180,24 @@ agent-account-google-id browser authenticate \\
 ```
 
 A successful result contains `authenticated`, the opaque account handle, provider and session references, the safe current URL/page label, and `verification_state`; it does not contain the demo username or password. Browser cleanup revokes the recorded Provider Session metadata while retaining a persistent profile, and a later browser session for the same account reuses that profile.
+
+## Real Account Provisioning Provider: Expand Testing
+
+`ExpandTestingProvider` is the first real browser provisioning integration. It uses the public Automation Testing Practice environment at `practice.expandtesting.com` as a test-only provider. The provisioning runtime generates a provider-valid Agent username from organization, agent, provider, and stable Agent identifier inputs, generates a password internally, stores the credential bundle through the Vault boundary, opens the real signup form in Chrome, submits it, verifies the site redirect to login, logs in with the account created by the tool, and verifies the protected `/secure` page. It then records a harmless authenticated-page read in safe Browser State.
+
+```bash
+printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id browser provision \\
+  --runtime-dir ./expandtesting-runtime \\
+  --organization-id acme-test \\
+  --agent-id research-agent \\
+  --display-name "Research Agent Test" \\
+  --stable-agent-id live-acceptance-unique-id \\
+  --ttl 300 \\
+  --browser-session-name expandtesting-provision-session \\
+  --agent-key-stdin
+```
+
+The command returns only safe identity, account, external-account reference, browser, and authentication metadata. The external reference is backed by the real signup and the subsequent real login; a local Account Record alone is never treated as proof. The practice site's authentication uses process-bound session cookies, so the provider capability reports reauthentication required after a complete browser process restart even though the Account Record and persistent Profile remain. This is recorded as a provider limitation rather than hidden or bypassed.
 
 ## First real Provider: GitHub
 
@@ -220,7 +240,7 @@ CREATE
   -> DESTROY LOCAL SESSION DATA
 ```
 
-The provider declares its real capabilities. The Google provider in this repository reports third-party account provisioning as unavailable rather than asking for the user's personal account. Provider-managed credential operations remain outside this local process.
+The provider declares its real capabilities. The Google provider in this repository reports third-party account provisioning as unavailable rather than asking for the user's personal account. `ExpandTestingProvider` declares browser account creation and internal credential initialization as supported only for its public practice environment; its process-bound session recovery is explicitly limited. Provider-managed credential operations remain outside this local process.
 
 ## Security boundary
 
