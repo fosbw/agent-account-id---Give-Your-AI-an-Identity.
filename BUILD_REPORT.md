@@ -8,7 +8,9 @@
 
 The original Supervisor provides a TTL timer, dedicated POSIX process group, best-effort process-group termination, POSIX pause/resume, a redacted JSONL event log, local watch, workspace and sensitive-path checks, command guardrails, and Claude Code/Codex adapters.
 
-The Account Runtime adds `AgentAccount`, `AccountProvisioner`, `LocalManagedAccountProvisioner`, `GoogleProvider`, `ProviderCapabilities`, `ProviderOperationUnavailable`, and `AccountVault`. Account records contain safe metadata, opaque handles, lifecycle state, identity references, provider state, and browser-profile references. The vault rejects passwords, cookies, access tokens, refresh tokens, recovery codes, private keys, and other secret-like fields. It stores opaque references only.
+The Account Runtime adds `AgentAccount`, `AccountProvisioner`, `LocalManagedAccountProvisioner`, `GoogleProvider`, `ProviderCapabilities`, `ProviderOperationUnavailable`, and `AccountVault`. Account records contain safe metadata, opaque handles, lifecycle state, identity references, provider state, and browser-profile references. The vault accepts provider secrets through an internal `put_secret` boundary, keeps raw values process-bound, and exposes only opaque references and safe metadata. Raw values are never written to disk, returned by public metadata methods, or sent to the Agent.
+
+The Core Runtime adds a separate `ProviderAdapter`, `ProviderSession`, `AgentIdentity`, `AccountStore`, `AccountRuntime`, and `CorePath`. `AccountRuntime` orchestrates Agent Key -> Agent Identity -> Account Provisioning -> Credential Vault -> Browser Profile -> Persistent Browser Session -> Provider Session -> Agent Action -> Kill -> Restart.
 
 The provider model exposes capability discovery for account creation, identity initialization, credential initialization, browser sessions, persistent sessions, verification, recovery, rotation, and revocation. The Google provider reports third-party account provisioning as unavailable when the provider does not expose that operation. It does not ask for a user's personal account as a silent fallback.
 
@@ -33,19 +35,20 @@ agent-account-google-id run --account-id ... --persistent-profile ...
 
 The product-facing executable is `agent-account-google-id`. The legacy `agentguard` executable remains as a compatibility alias. The package module directory remains `agentguard` so existing imports and integrations do not break.
 
-The repository documentation is in English and uses the product name: README, Skill, integration guide, full concept specification, supported-site matrix, threat model, and build report.
+The repository documentation is in English and uses the product name: README, Skill, integration guide, full concept specification, identity/browser guide, supported-site matrix, threat model, and build report.
 
 ## Verification performed
 
 | Check | Result |
 |---|---|
-| Unit and lifecycle tests | 22 passed |
+| Unit and lifecycle tests | 23 passed |
 | Python compilation | Passed for `agentguard`, `adapters`, and tests |
 | Existing Supervisor tests | Passed |
 | Browser URL policy tests | Passed |
 | Browser lifecycle tests | Passed |
 | Persistent profile retention test | Passed |
 | Account lifecycle test | Passed |
+| `test_agent_account_end_to_end_lifecycle` | Passed: Agent Key -> Identity -> Account -> Vault -> Browser Profile -> Provider Session -> Action -> Kill -> Restart -> same persistent Account |
 | Account Vault secret-field rejection | Passed |
 | Google provider capability test | Passed |
 | Capability wildcard rejection | Passed |
@@ -56,7 +59,7 @@ The repository documentation is in English and uses the product name: README, Sk
 
 ## Deliberately unavailable provider operations
 
-The repository does not claim to create or distribute consumer Google accounts, operate a shared account pool, import cookies, retrieve passwords or recovery codes, bypass MFA/CAPTCHA, or provide unrestricted cross-site login. The Google provider reports unavailable operations clearly. Provider-managed secrets must remain in a provider-approved external boundary.
+The repository does not claim to create or distribute consumer Google accounts, operate a shared account pool, import cookies, retrieve passwords or recovery codes, bypass MFA/CAPTCHA, or provide unrestricted cross-site login. The Google provider reports unavailable operations clearly. Provider-managed secrets must remain in a provider-approved external boundary. The end-to-end test uses `TestProviderAdapter`, an adapter implemented outside the Core Runtime with synthetic provider state; it does not contact Google or an external website.
 
 ## Known limitations
 

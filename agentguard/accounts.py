@@ -6,7 +6,10 @@ import time
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Callable, Mapping, Protocol, TypeVar
+
+
+T = TypeVar("T")
 
 
 class AccountError(RuntimeError):
@@ -107,17 +110,18 @@ class AccountProvisioner(Protocol):
 
 
 class AccountVault:
-    """Metadata-only account vault.
+    """Process-bound secret boundary with non-secret on-disk metadata.
 
-    This vault intentionally refuses passwords, cookies, OAuth tokens, recovery
-    material, and private keys. Provider implementations may keep those values
-    in a provider-managed vault outside this process, but this package stores
-    only opaque references and lifecycle metadata.
+    Provider adapters may submit a secret through ``put_secret``. The value is
+    kept only in the vault object's private memory and can be consumed through
+    ``use_secret`` by an adapter. Public metadata, model context, tool output,
+    and event logs contain only an opaque reference and ``secret_present``.
     """
 
     def __init__(self, root: Path):
         self.root = root.expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self._secrets: dict[str, str] = {}
 
     def put_reference(self, handle: str, metadata: Mapping[str, object] | None = None) -> str:
         validate_account_handle(handle)
@@ -125,10 +129,40 @@ class AccountVault:
         reference_id = "ref-" + uuid.uuid4().hex
         path = self.root / f"{reference_id}.json"
         path.write_text(
-            json.dumps({"reference_id": reference_id, "handle": handle, "metadata": clean}, indent=2) + "\n",
+            json.dumps({"reference_id": reference_id, "handle": handle, "metadata": clean, "secret_present": False}, indent=2) + "\n",
             encoding="utf-8",
         )
         return reference_id
+
+    def put_secret(self, handle: str, name: str, value: str) -> str:
+        """Accept a provider secret internally and return only an opaque ref.
+
+        The raw value is never written to disk and is never returned. The
+        caller must be a provider adapter that immediately uses the reference.
+        """
+        validate_account_handle(handle)
+        if not name or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,63}", name):
+            raise AccountError("secret name must be a safe identifier")
+        if not isinstance(value, str) or not value:
+            raise AccountError("secret value must be a non-empty string")
+        reference_id = "secret-" + uuid.uuid4().hex
+        self._secrets[reference_id] = value
+        path = self.root / f"{reference_id}.json"
+        path.write_text(
+            json.dumps({"reference_id": reference_id, "handle": handle, "name": name, "secret_present": True}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return reference_id
+
+    def use_secret(self, reference_id: str, consumer: Callable[[str], T]) -> T:
+        """Run provider code with a secret without exposing it as a result."""
+        if not reference_id or not reference_id.startswith("secret-"):
+            raise AccountError("invalid secret reference")
+        if reference_id not in self._secrets:
+            raise FileNotFoundError(f"secret reference is not available in this process: {reference_id}")
+        if not callable(consumer):
+            raise TypeError("consumer must be callable")
+        return consumer(self._secrets[reference_id])
 
     def get_reference(self, reference_id: str) -> dict:
         if not reference_id or "/" in reference_id or "\\" in reference_id:
@@ -140,6 +174,7 @@ class AccountVault:
 
     def revoke_reference(self, reference_id: str) -> None:
         self.get_reference(reference_id)
+        self._secrets.pop(reference_id, None)
         (self.root / f"{reference_id}.json").unlink(missing_ok=True)
 
 

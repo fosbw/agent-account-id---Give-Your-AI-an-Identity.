@@ -57,7 +57,27 @@ python3 adapters/codex_run.py --ttl 3600 --workspace . -- codex
 
 The wrapper supervises the Codex process the user already installed. It does not replace the Agent or model.
 
-## Account Runtime
+## Core Product Flow
+
+The runtime now proves the separated core path with a provider adapter outside the Core Runtime:
+
+```text
+Agent Key
+  -> Agent Identity
+  -> Agent Account Provisioning
+  -> Account Credential Vault
+  -> Browser Profile
+  -> Persistent Browser Session
+  -> Provider Session
+  -> Agent Action
+  -> Kill
+  -> Restart
+  -> Continue with the same Agent Account
+```
+
+`AccountStore` owns Account Records. `AccountVault` owns provider secret references and keeps raw values process-bound. `AccountRuntime` owns lifecycle ordering. `ProviderAdapter` owns provider-specific behavior. `BrowserSessionManager` owns browser profiles and session manifests. `ProviderSession` represents the provider-side authenticated session.
+
+The end-to-end proof is `tests/test_agent_account_end_to_end.py::test_agent_account_end_to_end_lifecycle`. It uses `TestProviderAdapter`, which is implemented outside the Core Runtime, stores a synthetic credential through the Vault boundary, authenticates a provider session, executes a test-site action, kills the session, restarts it, and verifies that the Account ID, Account Handle, Identity ID, and persistent Browser Profile are reused while the Provider Session ID changes.
 
 Create a persistent local Agent Account record:
 
@@ -77,7 +97,7 @@ agent-account-google-id account capabilities --provider google
 agent-account-google-id account sites
 ```
 
-The record contains safe metadata, an opaque account handle, lifecycle state, identity reference, provider state, and browser-profile reference. It does not contain a password, cookie, access token, refresh token, recovery code, or private key.
+The record contains safe metadata, an opaque account handle, lifecycle state, identity reference, provider state, and browser-profile reference. It does not contain a password, cookie, access token, refresh token, recovery code, or private key. Provider secrets enter the Vault only through an internal provider boundary and never appear in public metadata, Agent context, Tool output, logs, or Live View.
 
 The Account Runtime models `CREATE`, `PROVISION`, `INITIALIZE`, `LOGIN`, `VERIFICATION`, `SESSION ACTIVE`, `USE`, `PAUSE`, `RESUME`, `EXPIRE`, `REAUTHENTICATE`, `REVOKE`, and local session-data cleanup. Each provider declares which operations it officially exposes.
 
