@@ -14,7 +14,7 @@ The Agent calls the tool. The tool checks the Agent identity and capabilities, c
 
 ## The site list
 
-The current matrix contains **8 named service entries**. They are integration targets with explicit provider conditions. A named site is not automatically a working login adapter just because it has a Google sign-in button.
+The current matrix contains **9 named service entries**. They are integration targets with explicit provider conditions. A named site is not automatically a working login adapter just because it has a Google sign-in button.
 
 | # | Service | Official path that may be used | Current status |
 |---:|---|---|---|
@@ -26,8 +26,9 @@ The current matrix contains **8 named service entries**. They are integration ta
 | 6 | Atlassian Cloud | OAuth, SAML/SSO, or an official API | Conditional; depends on organization identity settings. |
 | 7 | Linear | Linear OAuth integration or API | Conditional; requires an approved integration. |
 | 8 | GitHub | GitHub OAuth App, GitHub App, or Enterprise SSO | **Implemented for authorized API actions** through `GitHubProviderAdapter`; browser login remains provider-specific. |
+| 9 | Public login demo (`the-internet.herokuapp.com`) | Site-published demo credentials through the scoped Browser Authentication Runtime | **Implemented as a public test integration only** through `DemoLoginAdapter`; not a production provider or universal login bridge. |
 
-The number of services documented is **8**. The number of third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The number of third-party websites with a fully automated browser-login adapter remains **0**. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; this is a real provider action, not a universal browser-login bridge.
+The number of services documented is **9**. The number of production third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The repository also includes **1 public test-site Browser Authentication adapter** for the documented Demo flow. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; the Demo is intentionally limited to form discovery, login, verification, safe session metadata, and persistent-profile lifecycle testing.
 
 ## What counts as a supported login path
 
@@ -67,7 +68,7 @@ You need Python 3.10 or newer, Git, a supported Agent or local command, a worksp
 
 For Google OAuth, you need an Installed-App OAuth Client and a Google identity that is already owned and authorized by the operator or organization. The current flow requests identity scopes only and does not create a Google account or request Gmail, Drive, recovery, payment, or administration access.
 
-For an external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
+For a production external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. The public Demo integration is a test-only exception with site-published credentials held inside the process-bound Vault. Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
 
 ## The one-command workflow
 
@@ -114,6 +115,11 @@ agent-account-google-id account create --agent-id research-agent --display-name 
 agent-account-google-id browser create --ttl 3600 --allow-domain example.com --persistent-profile --account-id <account-id>
 agent-account-google-id browser state <browser-session-id> --url https://example.com/ --page "Home" --action "Reading"
 agent-account-google-id browser verification <browser-session-id> example.com phone_required
+agent-account-google-id browser authenticate <browser-session-id> \\
+  --account-handle agent_account://demo-site/acct-demo \\
+  --target the-internet.herokuapp.com \\
+  --browser-session-name demo-auth-session \\
+  --install-demo-credentials
 ```
 
 The CLI exposes the lifecycle and control surfaces. It does not claim to provision a third-party consumer account when the provider has not exposed that operation.

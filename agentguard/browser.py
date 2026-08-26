@@ -252,6 +252,58 @@ class BrowserSessionManager:
         self._log(manifest, "browser.state_updated", {"url": decision.canonical_url, "page": page, "action": action})
         return decision
 
+    def record_login_state(self, session_id: str, state: str, domain: str) -> None:
+        allowed = {"not_started", "login_required", "authenticating", "active", "failed", "revoked"}
+        if state not in allowed:
+            raise ValueError("unsupported login state")
+        manifest = self.get(session_id)
+        decision = BrowserPolicy(manifest.allowed_domains).decide("https://" + domain + "/", purpose="login_handoff")
+        if not decision.allowed:
+            raise ValueError(f"login state blocked: {decision.reason}")
+        manifest.login_state = state
+        manifest.current_action = "login_state_updated"
+        self._write(manifest)
+        self._log(manifest, "browser.login_state", {"domain": domain, "state": state})
+
+    def record_provider_session(self, session_id: str, metadata: dict[str, object]) -> None:
+        """Persist provider-session metadata without accepting raw credentials."""
+        manifest = self.get(session_id)
+        safe = {str(key): value for key, value in metadata.items()}
+        forbidden = {"password", "cookie", "cookies", "token", "secret", "client_secret"}
+        if any(any(word in key.lower() for word in forbidden) for key in safe):
+            raise ValueError("provider session metadata cannot contain secret fields")
+        (self._directory(session_id) / "provider-session.json").write_text(
+            json.dumps(safe, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        self._log(
+            manifest,
+            "browser.provider_session_recorded",
+            {"provider": safe.get("provider"), "session_id": safe.get("session_id"), "state": safe.get("state")},
+        )
+
+    def get_provider_session(self, session_id: str) -> dict[str, object]:
+        self.get(session_id)
+        path = self._directory(session_id) / "provider-session.json"
+        if not path.exists():
+            raise FileNotFoundError(f"provider session not found for browser session: {session_id}")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+
+    def _revoke_provider_session(self, session_id: str) -> None:
+        path = self._directory(session_id) / "provider-session.json"
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return
+        if not isinstance(data, dict):
+            return
+        data["state"] = "revoked"
+        data["authenticated"] = False
+        data["updated_at"] = time.time()
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
     def record_verification_state(self, session_id: str, state: str, domain: str) -> None:
         allowed = {"not_detected", "email_required", "phone_required", "otp_required", "mfa_required", "captcha_detected", "provider_blocked", "completed"}
         if state not in allowed:
@@ -287,6 +339,7 @@ class BrowserSessionManager:
         if not manifest.persistent_profile and profile.parent == self._directory(session_id).resolve() and profile.name == "profile" and profile.exists():
             shutil.rmtree(profile)
             profile_deleted = True
+        self._revoke_provider_session(session_id)
         manifest.status = "cleaned"
         manifest.cleanup_at = time.time()
         manifest.browser_pid = None

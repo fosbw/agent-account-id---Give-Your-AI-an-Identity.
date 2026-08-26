@@ -164,6 +164,26 @@ class AccountVault:
             raise TypeError("consumer must be callable")
         return consumer(self._secrets[reference_id])
 
+    def list_references(self) -> list[dict]:
+        rows = []
+        for path in sorted(self.root.glob("*.json")):
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
+        return rows
+
+    def find_active_secret_reference(self, handle: str, name: str) -> str:
+        """Return a matching secret reference that is loaded in this process."""
+        validate_account_handle(handle)
+        for row in self.list_references():
+            reference_id = str(row.get("reference_id") or "")
+            if row.get("handle") == handle and row.get("name") == name and reference_id in self._secrets:
+                return reference_id
+        raise FileNotFoundError(f"active secret reference is not available for {handle} and {name}")
+
     def get_reference(self, reference_id: str) -> dict:
         if not reference_id or "/" in reference_id or "\\" in reference_id:
             raise ValueError("invalid vault reference id")

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .accounts import AccountVault, GoogleProvider, LocalManagedAccountProvisioner
 from .browser import BrowserSessionManager
+from .browser_auth import AgentBrowserAutomation, BrowserAuthenticationRuntime, DemoCredentialProvider, DemoLoginAdapter, LoginRequest
 from .capabilities import CapabilityRegistry
 from .events import EventLog
 from .google_oauth import GoogleOAuthClient, GoogleOAuthConfig
@@ -178,6 +179,16 @@ def build_parser() -> argparse.ArgumentParser:
     browser_state.add_argument("--url", required=True)
     browser_state.add_argument("--page", default=None)
     browser_state.add_argument("--action", dest="browser_action_label", default="observed")
+
+    browser_auth = browser_sub.add_parser("authenticate", help="authenticate an Agent Account inside an isolated browser session")
+    browser_auth.add_argument("--browser-dir", type=Path, default=None)
+    browser_auth.add_argument("--vault-dir", type=Path, default=None)
+    browser_auth.add_argument("session_id")
+    browser_auth.add_argument("--account-handle", required=True)
+    browser_auth.add_argument("--target", choices=("the-internet.herokuapp.com",), required=True)
+    browser_auth.add_argument("--login-url", default="https://the-internet.herokuapp.com/login")
+    browser_auth.add_argument("--browser-session-name", required=True)
+    browser_auth.add_argument("--install-demo-credentials", action="store_true", help="install the site's public Demo credentials into the internal test vault")
 
     browser_verification = browser_sub.add_parser("verification", help="record a real provider verification state")
     browser_verification.add_argument("--browser-dir", type=Path, default=None)
@@ -517,6 +528,32 @@ def cmd_browser_watch(args) -> int:
         time.sleep(0.25)
 
 
+def cmd_browser_authenticate(args) -> int:
+    manager = browser_from(args)
+    manifest = manager.get(args.session_id)
+    if manifest.account_id is None:
+        raise SystemExit("browser authentication requires an Agent Account-bound session")
+    vault = AccountVault(args.vault_dir or manager.root / "vault")
+    if args.install_demo_credentials:
+        DemoCredentialProvider.install(args.account_handle, vault)
+    browser = AgentBrowserAutomation(args.browser_session_name)
+    request = LoginRequest(
+        account_handle=args.account_handle,
+        target=args.target,
+        login_url=args.login_url,
+        session_id=args.session_id,
+        profile_dir=Path(manifest.profile_dir),
+    )
+    try:
+        state = BrowserAuthenticationRuntime(manager, vault).login(request, DemoLoginAdapter(), browser)
+        print(json.dumps(state.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    finally:
+        # Closing the daemon keeps the persistent profile on disk while
+        # preventing a stale Chromium profile lock after this CLI invocation.
+        browser.close()
+
+
 def cmd_browser(args) -> int:
     manager = browser_from(args)
     if args.browser_action == "create":
@@ -550,6 +587,8 @@ def cmd_browser(args) -> int:
         manager.mark_manual_login_complete(args.session_id, args.domain)
         print(json.dumps({"ok": True, "event": "browser.login_manual_signal", "domain": args.domain, "verified": False}))
         return 0
+    if args.browser_action == "authenticate":
+        return cmd_browser_authenticate(args)
     if args.browser_action == "state":
         decision = manager.record_browser_state(args.session_id, args.url, args.page, args.browser_action_label)
         print(json.dumps(asdict(decision), ensure_ascii=False, indent=2))

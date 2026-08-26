@@ -22,7 +22,7 @@ A task can use a real browser and real Internet only inside an environment owned
 |---|---|
 | Agent supervision | Runs a user-owned Agent under a wall-clock TTL and process-group control. |
 | Agent Account Runtime | Stores non-secret Agent Account records, handles, lifecycle state, provider capability state, and browser-profile references. |
-| Credential boundary | Accepts opaque references only. Passwords, cookies, access tokens, refresh tokens, recovery codes, and private keys are rejected from metadata. |
+| Credential boundary | Accepts provider secrets only through an internal process-bound interface; public metadata, Agent output, logs, and Live State expose opaque references and safe status only. |
 | Google identity | Supports the official limited identity OAuth flow and stores identity metadata only. Google account provisioning is reported as unavailable when the provider does not expose that operation. |
 | GitHub Provider | Real GitHub App/OAuth token authentication and read actions through the official REST API; browser login remains provider-specific. |
 | Persistent browser profile | A profile can be attached to an Agent Account and retained between tasks. Timer expiry ends the task/session; it does not delete the account record or persistent profile. |
@@ -160,6 +160,25 @@ agent-account-google-id browser cleanup <browser-session-id>
 
 The Kill path stops the Agent process group and the tracked browser process. A persistent Agent Account record and persistent profile are not deleted by task TTL. Revocation is a separate account lifecycle operation.
 
+## Browser Authentication Runtime
+
+The Browser Authentication Runtime is the generic layer between an Agent Account handle and a provider-specific login adapter. The Agent sends only `account_handle` and `target`; the runtime obtains the provider credential from the internal Vault boundary, discovers the login form, fills and submits it inside the isolated browser, verifies the resulting page state, records a safe Provider Session, and returns safe authentication metadata. Passwords, cookies, and tokens are not returned to the Agent, written to event logs, or included in Live State.
+
+The first integration is intentionally scoped to the public test site `the-internet.herokuapp.com`. Its site-published demo credentials are supplied to the internal process boundary through `AGENT_ACCOUNT_DEMO_USERNAME` and `AGENT_ACCOUNT_DEMO_PASSWORD`, then installed into the in-memory Vault with `--install-demo-credentials`; they are never accepted as command-line arguments or returned to the Agent. The project CLI path is:
+
+```bash
+agent-account-google-id browser authenticate \\
+  --browser-dir ./browser \\
+  --vault-dir ./vault \\
+  <browser-session-id> \\
+  --account-handle agent_account://demo-site/acct-demo \\
+  --target the-internet.herokuapp.com \\
+  --browser-session-name demo-auth-session \\
+  --install-demo-credentials
+```
+
+A successful result contains `authenticated`, the opaque account handle, provider and session references, the safe current URL/page label, and `verification_state`; it does not contain the demo username or password. Browser cleanup revokes the recorded Provider Session metadata while retaining a persistent profile, and a later browser session for the same account reuses that profile.
+
 ## First real Provider: GitHub
 
 GitHub is the first real provider adapter in this repository. It links an existing authorized GitHub App installation or caller-owned GitHub token through the internal Vault boundary, validates the Provider Session with the official GitHub REST API, and executes safe read actions. It does not create a GitHub account, import browser cookies, or expose the token to the Agent.
@@ -207,7 +226,7 @@ The provider declares its real capabilities. The Google provider in this reposit
 
 This project is a control plane and guardrail layer. It is not an operating-system sandbox or a full network firewall. Strong isolation requires a user-controlled container or VM, an OS-level egress policy, a provider-approved identity, and an external secret manager.
 
-Raw credentials must never enter the model context, tool output, event logs, Live View, GitHub, or command-line arguments. The current vault stores opaque references and safe metadata only. It does not receive or persist passwords, cookies, OAuth tokens, recovery codes, or private keys.
+Raw credentials must never enter the model context, tool output, event logs, Live View, GitHub, or command-line arguments. The current vault accepts provider secrets only through internal adapter calls, keeps raw values process-bound, and stores only opaque references and safe metadata on disk. It does not persist passwords, cookies, OAuth tokens, recovery codes, or private keys.
 
 The tool does not create or distribute consumer accounts, bypass CAPTCHA/MFA/anti-bot controls, change recovery settings, or provide unrestricted “log in anywhere” automation. When a provider does not expose an operation, the provider adapter reports that operation as unavailable.
 
