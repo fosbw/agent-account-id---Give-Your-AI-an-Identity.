@@ -1,73 +1,93 @@
 # Agent Account Google ID — Give Your AI an Identity
 
-**Agent Account Google ID** is a local-first control plane around a user-owned AI agent such as Claude Code or Codex CLI. The user brings the agent, model access, API keys, workspace, and execution environment. The project adds a bounded session, an isolated browser-profile lifecycle, an operator-authorized identity reference, a redacted live event stream, pause/stop controls, policy checks, and cleanup.
+This tool is built for people who already use an AI Agent such as Claude Code or Codex. You bring the Agent, the model, the API key, the workspace, and the environment. **Agent Account Google ID — Give Your AI an Identity** adds the missing operating layer: an Agent identity reference, an Agent Account record, a browser profile, a persistent session, a timer, Live State, controls, policies, and cleanup.
 
-الـ Tool دي معمولة عشان تدي الـ Agent هوية تشغيل وجلسة متصفح ووقت محدد. أنت بتجيب الـ Agent والنموذج والبيئة، وتقول له المهمة والمدة، وهو يستدعي الأداة. الاسم الأساسي للمنتج هو **Agent Account Google ID — Give Your AI an Identity**. أمر `agentguard` القديم يفضل موجود عشان التوافق، ومعاه أمر `agent-account-google-id` باسم المنتج.
+The product is not just a timer. The timer, Pause, Resume, Stop, Kill Switch, Live View, Audit, and policies are parts of the core product. The main idea is simple: the Agent gets its own identity and its own browser context instead of using the user's personal browser profile.
 
-The Python compatibility command remains named `agentguard`, while the product-facing command is `agent-account-google-id`. The GitHub repository name is intentionally unchanged.
+## The workflow
 
-> Give the agent a clock, a controlled identity reference, a visible trail, and an emergency stop—without becoming a password broker or a shared-account service.
+The user gives the Agent a normal instruction:
 
-## What is included
+```text
+Open the approved Microsoft workspace, use my Agent Account, and work for one hour.
+```
+
+The Agent calls this tool. The tool checks the Agent identity, checks the requested capabilities, creates or reuses the Agent Account record, starts an isolated browser session, starts the timer, and sends only opaque session references to the Agent. The user watches the activity and can pause, resume, stop, or kill the run.
+
+A task can use a real browser and real Internet only inside an environment owned and configured by the operator. A provider must officially expose the identity or account operation before an adapter can perform it. The tool never turns a user account into an Agent account by default.
+
+## What is in main
 
 | Capability | Current behavior |
 |---|---|
-| Agent session timer | Ends the supervised agent process group when the TTL expires. |
-| Live observer | `agentguard watch` tails a local redacted JSONL stream; it is read-only. |
-| Pause, stop, kill | POSIX pause/resume plus process-group stop and best-effort descendant cleanup. |
-| Workspace policy | Canonical path checks and sensitive-path guardrails. |
-| Command guardrails | Blocks a small set of destructive and network-capable patterns; it is not a sandbox. |
-| Secret redaction | Redacts common API keys, bearer tokens, private keys, passwords, and credential-like fields from events. |
-| Identity reference | Attaches safe provider/subject metadata only. No password, cookie, OAuth token, recovery code, or private key is accepted or persisted. |
-| Browser session | Creates an ephemeral Chromium profile manifest with a TTL and explicit HTTPS domain allowlist. |
-| Browser policy | Blocks credentials in URLs, localhost/private/link-local/metadata targets, sensitive Google services, and recovery/password/challenge paths. |
-| Login handoff | Records that an authorized operator must complete login manually in the isolated browser window. The completion command is only a manual signal; it does not verify or extract credentials. |
-| Browser cleanup | Stops the tracked browser process and deletes the ephemeral profile. The non-secret manifest and event trail remain for audit. |
-| Claude Code adapter | Reads hook JSON, records a redacted event, and can return a `PreToolUse` deny decision. |
-| Codex adapter | Runs the locally installed Codex CLI under the same supervisor. |
-| Chat skill | `skill/SKILL.md` teaches an agent how to invoke the local commands. |
+| Agent supervision | Runs a user-owned Agent under a wall-clock TTL and process-group control. |
+| Agent Account Runtime | Stores non-secret Agent Account records, handles, lifecycle state, provider capability state, and browser-profile references. |
+| Credential boundary | Accepts opaque references only. Passwords, cookies, access tokens, refresh tokens, recovery codes, and private keys are rejected from metadata. |
+| Google identity | Supports the official limited identity OAuth flow and stores identity metadata only. Google account provisioning is reported as unavailable when the provider does not expose that operation. |
+| Persistent browser profile | A profile can be attached to an Agent Account and retained between tasks. Timer expiry ends the task/session; it does not delete the account record or persistent profile. |
+| Browser policy | Enforces HTTPS, domain allowlists, blocked sensitive Google areas, and private/local/metadata host blocking. |
+| Live Browser State | Records current URL, page label, current action, login state, verification state, session status, and timer metadata without secrets. |
+| Verification handling | Records real provider states such as email, phone, OTP, MFA, CAPTCHA, or provider-blocked. It does not bypass challenges. |
+| Controls | Pause, resume, stop, kill, TTL expiry, and cleanup are outside the Agent's control. |
+| Claude Code | Hook adapter for session events and policy decisions. |
+| Codex | Process wrapper under the same supervisor. |
+| Site and Agent matrix | `SUPPORTED_SITES.md` lists the supported integration paths, environments, Agents, and requirements. |
 
-## Quick start: supervise an agent
-
-من داخل مجلد المشروع ثبّت الأداة مرة واحدة، وبعدها استخدم اسم المنتج في الأوامر:
-
-```bash
-python3 -m pip install -e .
-```
+## Install
 
 From the repository root:
 
 ```bash
-agent-account-google-id run --ttl 1800 --workspace . -- codex
+python3 -m pip install -e .
+agent-account-google-id --help
 ```
 
-The command prints a session ID. In another terminal:
+The legacy `agentguard` command remains available only for compatibility with older installations. The product name is **Agent Account Google ID — Give Your AI an Identity**.
+
+## Start an Agent session
 
 ```bash
-agent-account-google-id list
-agent-account-google-id watch <session-id> --follow
-agent-account-google-id browser watch <browser-session-id> --follow
-agent-account-google-id pause <session-id>
-agent-account-google-id resume <session-id>
-agent-account-google-id stop <session-id> --reason user_requested
+agent-account-google-id run \
+  --ttl 3600 \
+  --workspace . \
+  --allow-network \
+  -- codex
 ```
 
-Claude Code hook adapter example:
+For a session connected to an existing Agent Account and persistent browser profile:
 
 ```bash
-AGENTGUARD_SESSION_ID=<session-id> \
-  python adapters/claude_hook.py --event PreToolUse
+agent-account-google-id run \
+  --ttl 3600 \
+  --account-id <account-id> \
+  --persistent-profile \
+  --identity-id <identity-id> \
+  --allow-domain example.com \
+  --browser-start-url https://example.com/ \
+  --workspace . \
+  -- codex
 ```
 
-Codex wrapper example:
+The Agent receives opaque `AGENTGUARD_*` session variables and account identifiers. It does not receive raw credentials.
+
+## Create and inspect an Agent Account record
 
 ```bash
-python adapters/codex_run.py --ttl 1800 --workspace . -- codex
+agent-account-google-id account create \
+  --agent-id research-agent \
+  --display-name "Research Agent"
+
+agent-account-google-id account capabilities
+agent-account-google-id account sites
+agent-account-google-id account show <account-id>
+agent-account-google-id account revoke <account-id>
 ```
 
-## Quick start: attach a safe identity reference
+The local Account Runtime creates a persistent local record and an opaque handle such as `agent_account://local/acct-...`. A local record is not falsely presented as a third-party Google account. Provider adapters report what they can and cannot do.
 
-For a Google identity that is already provisioned and authorized, the package can perform a one-time installed-app OAuth flow using PKCE and identity scopes only. The command opens Google's normal consent screen, receives a short-lived access token in memory, obtains subject/email metadata, and persists only the non-secret identity reference:
+## Google identity metadata
+
+For an identity that has already been provisioned and authorized through an official Google flow:
 
 ```bash
 agent-account-google-id google-auth \
@@ -75,114 +95,120 @@ agent-account-google-id google-auth \
   --identity-dir ~/.agentguard/identities
 ```
 
-The OAuth command does **not** create a Google account, request Gmail/Drive/admin scopes, persist access or refresh tokens, import browser state, or log in to a website. The user/provider must own and authorize the Google identity before this step.
+The flow uses PKCE and identity scopes. It stores safe subject and email metadata only. It does not create a Google account, request Gmail or Drive access, persist OAuth tokens, import browser state, or modify recovery settings.
 
-If metadata is already available from an authorized provider flow, use:
+## Browser session
 
-```bash
-agent-account-google-id identity attach \
-  --provider google \
-  --subject provider-subject-id \
-  --email agent@example.com \
-  --email-verified \
-  --authorization-basis test_account
-```
-
-Only the returned non-secret `identity_id` should be used in a browser manifest. Never place a password, cookie, refresh token, access token, recovery code, or private key in a command line or metadata file.
-
-## Automatic agent + browser context
-
-When a non-secret identity reference and approved domains already exist, the user can request one supervised run. The tool creates the browser context before the Agent starts, passes only session identifiers/profile metadata through `AGENTGUARD_*` variables, and cleans up after the Agent exits or the TTL expires:
-
-```bash
-agent-account-google-id run \
-  --ttl 1800 \
-  --identity-id <identity-id> \
-  --allow-domain example.com \
-  --browser-start-url https://example.com/task \
-  --workspace . \
-  -- codex
-```
-
-This is the intended agent-to-tool orchestration path: the user specifies the task and time limit, while the Agent invokes the local tool. The identity adapter remains metadata-only, and this command does not create an account, inject a password, or verify a provider login.
-
-## Quick start: controlled browser session
-
-Create an ephemeral profile with an allowlist:
+Create a browser session with an explicit allowlist:
 
 ```bash
 agent-account-google-id browser create \
-  --ttl 1800 \
+  --ttl 3600 \
   --allow-domain example.com \
-  --allow-domain login.example.com \
   --identity-provider google \
-  --identity-id <identity-id>
+  --identity-id <identity-id> \
+  --account-id <account-id> \
+  --persistent-profile
 ```
 
-Check a target before navigation:
+Check a URL before navigation:
 
 ```bash
 agent-account-google-id browser check-url <browser-session-id> https://example.com/task
-agent-account-google-id browser check-url <browser-session-id> https://mail.google.com/
 ```
 
-Launch a local Chromium-compatible browser. The default command waits until TTL and then cleans the profile; use `--detach` only when an external supervisor will call cleanup:
+Launch a local Chromium-compatible browser:
 
 ```bash
-agent-account-google-id browser launch <browser-session-id> --url https://example.com/task
+agent-account-google-id browser launch <browser-session-id> \
+  --url https://example.com/task
 ```
 
-Login is an explicit operator handoff, not automated credential entry:
+Record safe Browser State for Live View:
 
 ```bash
-agent-account-google-id browser login-handoff <browser-session-id> example.com
-# The authorized operator completes the provider's normal login/MFA/CAPTCHA flow.
-agent-account-google-id browser login-complete <browser-session-id> example.com
+agent-account-google-id browser state <browser-session-id> \
+  --url https://example.com/task \
+  --page "Task page" \
+  --action "Reading the task"
 ```
 
-The browser policy is a decision layer. It is **not** an OS firewall, a Chromium extension, a proxy, or a guarantee that every navigation inside a browser will be intercepted. The automatic `run` path gives the Agent safe session metadata; a provider-specific runtime is still required for a real authorized identity to perform an OAuth/API action. For untrusted agents, combine it with a container or VM, a real egress firewall, and provider-approved account controls.
-
-## Security boundaries
-
-This project is designed for an identity owned or explicitly authorized by the operator or provider. It does not create, distribute, rent, rotate, or share consumer accounts. It does not import cookies, harvest passwords, bypass MFA or CAPTCHA, alter recovery settings, access Gmail/Drive/payments/admin pages, or provide unrestricted “log in anywhere” automation.
-
-The existing command policy is a **guardrail**, not a complete sandbox. Regex and substring checks can be bypassed by scripts, aliases, encoding, interpreters, or child processes. The browser allowlist is likewise a policy decision point, not a complete network isolation boundary. Strong isolation requires a user-controlled container/VM and an OS-level egress policy.
-
-The current browser login completion event is a user/operator assertion with `verified: false`; it is deliberately not proof of authentication. The supported-site matrix in [`SUPPORTED_SITES.md`](SUPPORTED_SITES.md) lists the provider conditions and does not turn arbitrary browser pages into supported login targets.
-
-## المواقع والـ Agents والمتطلبات
-
-بص، قائمة المواقع وطريقة الدخول ومكان التشغيل ومتطلبات الأداة مكتوبة بالتفصيل في [`SUPPORTED_SITES.md`](SUPPORTED_SITES.md). هناك فرق بين موقع عنده OAuth/OIDC أو API رسمي، وموقع عنده زر Google فقط، وموقع لا يدعم تكاملًا رسميًا. الأداة لا تعلن أن كل موقع يقبل Google تلقائيًا.
-
-الأداة تشتغل مع Claude Code وCodex مباشرة، وتقدر تشغل Agents أخرى كأوامر محلية، بينما تكامل Gemini CLI وGitHub Copilot CLI وMCP موثق كمسارات توسعة وليس كتكاملات مكتملة.
-
-## Supported agents
-
-The current first-class adapters are Claude Code hooks and the Codex process wrapper. Gemini CLI, GitHub Copilot CLI, MCP-compatible agents, and future browser-capable runtimes are documented as integration targets in [`SUPPORTED_AGENTS.md`](SUPPORTED_AGENTS.md), not as completed integrations.
-
-## Development
-
-The project has no runtime dependencies beyond Python 3.10+.
+Record a real verification state when the provider actually shows one:
 
 ```bash
-python3 -m pytest -q
-python3 -m compileall -q agentguard adapters
-agent-account-google-id --help
+agent-account-google-id browser verification \
+  <browser-session-id> example.com phone_required
 ```
 
+Observe the local redacted event stream:
 
-## Layout
+```bash
+agent-account-google-id watch <session-id> --follow
+agent-account-google-id browser watch <browser-session-id> --follow
+```
+
+## Controls
+
+```bash
+agent-account-google-id list
+agent-account-google-id pause <session-id>
+agent-account-google-id resume <session-id>
+agent-account-google-id stop <session-id> --reason user_requested
+agent-account-google-id browser cleanup <browser-session-id>
+```
+
+The Kill path stops the Agent process group and the tracked browser process. A persistent Agent Account record and persistent profile are not deleted by task TTL. Revocation is a separate account lifecycle operation.
+
+## Sites and environments
+
+Read [`SUPPORTED_SITES.md`](SUPPORTED_SITES.md) for the current site matrix. It covers Google Workspace/Cloud, Microsoft Entra federation, Notion, Slack, GitLab, Atlassian, Linear, GitHub, supported Agents, Linux/macOS/WSL/Docker/VM/CI environments, and the requirements for adding a provider adapter.
+
+A named service is not automatically a working login adapter. A site must officially expose OAuth, OIDC, SSO, or an API, and the operator must configure the provider and allowlist. A Google sign-in button alone does not make every browser login flow interchangeable.
+
+## Account Provisioner lifecycle
+
+The runtime models this lifecycle:
 
 ```text
-agentguard/       Supervisor, browser policy, identity references, events, redaction, and guardrails
-adapters/         Claude Code hook and Codex process adapters
-skill/            Chat-invocable skill instructions
-tests/            Unit tests
-docs/             Threat model, browser/identity boundary, and integration notes
-SUPPORTED_SITES.md Sites, Agents, places to run, requirements, and direct user workflow
-DESIGN_REVIEW.md  Architecture review and decisions
+CREATE
+  -> PROVISION
+  -> INITIALIZE
+  -> LOGIN / VERIFICATION STATE
+  -> SESSION ACTIVE
+  -> USE
+  -> PAUSE / RESUME
+  -> EXPIRE TASK
+  -> REAUTHENTICATE WHEN PROVIDER REQUIRES IT
+  -> REVOKE
+  -> DESTROY LOCAL SESSION DATA
 ```
 
-## Status
+The provider declares its real capabilities. The Google provider in this repository reports third-party account provisioning as unavailable rather than asking for the user's personal account. Provider-managed credential operations remain outside this local process.
 
-This branch implements the **identity-session safety layer** around the AgentGuard foundation. It does not claim to provision a Google account, provide a hosted browser, verify a login, or make arbitrary websites accept an agent identity. Those capabilities depend on provider authorization and an explicit deployment environment that are not present in this repository.
+## Security boundary
+
+This project is a control plane and guardrail layer. It is not an operating-system sandbox or a full network firewall. Strong isolation requires a user-controlled container or VM, an OS-level egress policy, a provider-approved identity, and an external secret manager.
+
+Raw credentials must never enter the model context, tool output, event logs, Live View, GitHub, or command-line arguments. The current vault stores opaque references and safe metadata only. It does not receive or persist passwords, cookies, OAuth tokens, recovery codes, or private keys.
+
+The tool does not create or distribute consumer accounts, bypass CAPTCHA/MFA/anti-bot controls, change recovery settings, or provide unrestricted “log in anywhere” automation. When a provider does not expose an operation, the provider adapter reports that operation as unavailable.
+
+## Development and tests
+
+```bash
+python3 -m compileall -q agentguard adapters tests
+python3 -m pytest -q
+python3 -m compileall -q agentguard adapters
+python3 -m agentguard --help
+```
+
+## Repository layout
+
+```text
+agentguard/          Account Runtime, identity, browser, supervisor, policy, events, and redaction
+adapters/            Claude Code and Codex adapters
+skill/               Chat-invocable Agent Account Google ID skill
+tests/               Unit and lifecycle tests
+SUPPORTED_SITES.md   Sites, Agents, environments, requirements, and provider paths
+REVIEW_FULL_CONCEPT.md  Full product concept and acceptance criteria
+```

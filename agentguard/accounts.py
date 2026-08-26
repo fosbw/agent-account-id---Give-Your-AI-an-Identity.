@@ -1,0 +1,344 @@
+from __future__ import annotations
+
+import json
+import re
+import time
+import uuid
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Mapping, Protocol
+
+
+class AccountError(RuntimeError):
+    """Base error for the Agent Account runtime."""
+
+
+class ProviderOperationUnavailable(AccountError):
+    """Raised when a provider does not expose a requested operation."""
+
+
+_SECRET_NAMES = {
+    "password",
+    "passwd",
+    "cookie",
+    "cookies",
+    "token",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+    "secret",
+    "private_key",
+    "recovery_code",
+    "recovery_codes",
+}
+_HANDLE_PATTERN = re.compile(r"^agent_account://[a-z0-9][a-z0-9._-]{0,63}/[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
+
+
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    provider: str
+    account_creation: str
+    identity_initialization: str
+    credential_initialization: str
+    browser_session: str
+    persistent_session: str
+    verification: str
+    recovery: str
+    credential_rotation: str
+    revocation: str
+
+    def safe_metadata(self) -> dict[str, str]:
+        return asdict(self)
+
+
+@dataclass
+class AgentAccount:
+    account_id: str
+    handle: str
+    agent_id: str
+    provider: str
+    display_name: str
+    state: str
+    created_at: float
+    updated_at: float
+    browser_profile: str | None = None
+    identity_id: str | None = None
+    verification_state: str = "not_started"
+    session_state: str = "not_started"
+    authorization_basis: str = "provider_authorized"
+
+    def safe_metadata(self) -> dict:
+        return asdict(self)
+
+
+class AccountProvisioner(Protocol):
+    provider: str
+
+    def capabilities(self) -> ProviderCapabilities:
+        ...
+
+    def can_create_account(self) -> bool:
+        ...
+
+    def create_account(self, agent_id: str, display_name: str) -> AgentAccount:
+        ...
+
+    def initialize_identity(self, account: AgentAccount, identity_id: str) -> AgentAccount:
+        ...
+
+    def initialize_credentials(self, account: AgentAccount) -> str:
+        """Return an opaque vault reference, never raw credentials."""
+        ...
+
+    def initialize_browser_session(self, account: AgentAccount, profile_dir: Path) -> AgentAccount:
+        ...
+
+    def verify_state(self, account: AgentAccount) -> AgentAccount:
+        ...
+
+    def recover_session(self, account: AgentAccount) -> AgentAccount:
+        ...
+
+    def rotate_credentials(self, account: AgentAccount) -> str:
+        ...
+
+    def revoke_account(self, account: AgentAccount) -> AgentAccount:
+        ...
+
+
+class AccountVault:
+    """Metadata-only account vault.
+
+    This vault intentionally refuses passwords, cookies, OAuth tokens, recovery
+    material, and private keys. Provider implementations may keep those values
+    in a provider-managed vault outside this process, but this package stores
+    only opaque references and lifecycle metadata.
+    """
+
+    def __init__(self, root: Path):
+        self.root = root.expanduser().resolve()
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def put_reference(self, handle: str, metadata: Mapping[str, object] | None = None) -> str:
+        validate_account_handle(handle)
+        clean = _safe_metadata(metadata or {})
+        reference_id = "ref-" + uuid.uuid4().hex
+        path = self.root / f"{reference_id}.json"
+        path.write_text(
+            json.dumps({"reference_id": reference_id, "handle": handle, "metadata": clean}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return reference_id
+
+    def get_reference(self, reference_id: str) -> dict:
+        if not reference_id or "/" in reference_id or "\\" in reference_id:
+            raise ValueError("invalid vault reference id")
+        path = self.root / f"{reference_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(f"vault reference not found: {reference_id}")
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def revoke_reference(self, reference_id: str) -> None:
+        self.get_reference(reference_id)
+        (self.root / f"{reference_id}.json").unlink(missing_ok=True)
+
+
+def validate_account_handle(handle: str) -> str:
+    if not isinstance(handle, str) or not _HANDLE_PATTERN.fullmatch(handle):
+        raise AccountError("account handle must be an opaque agent_account://provider/id reference")
+    return handle
+
+
+def _safe_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
+    clean: dict[str, object] = {}
+    for key, value in metadata.items():
+        name = str(key).lower()
+        if name in _SECRET_NAMES or any(secret in name for secret in _SECRET_NAMES):
+            raise AccountError(f"account metadata cannot contain secret field: {key}")
+        if isinstance(value, (dict, list, tuple)):
+            raise AccountError("account metadata must remain flat and non-sensitive")
+        if value is not None and not isinstance(value, (str, int, float, bool)):
+            raise AccountError(f"unsupported account metadata value: {key}")
+        clean[str(key)] = value
+    return clean
+
+
+class GoogleProvider:
+    """Google capability descriptor for officially exposed operations.
+
+    Google identity OAuth can authorize identity metadata. This provider does
+    not claim a public account-provisioning API and therefore reports account
+    creation as unavailable instead of asking for a user's personal account.
+    """
+
+    provider = "google"
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider=self.provider,
+            account_creation="unavailable",
+            identity_initialization="supported_via_oauth",
+            credential_initialization="provider_managed_only",
+            browser_session="supported_with_external_runtime",
+            persistent_session="supported_with_external_runtime",
+            verification="provider_state_required",
+            recovery="provider_managed_only",
+            credential_rotation="provider_managed_only",
+            revocation="provider_managed_only",
+        )
+
+    def can_create_account(self) -> bool:
+        return False
+
+    def create_account(self, agent_id: str, display_name: str) -> AgentAccount:
+        raise ProviderOperationUnavailable("Provider does not expose this operation: Google account provisioning")
+
+    def initialize_identity(self, account: AgentAccount, identity_id: str) -> AgentAccount:
+        if not identity_id or "/" in identity_id or "\\" in identity_id:
+            raise AccountError("identity_id must be a non-secret reference")
+        account.identity_id = identity_id
+        account.state = "identity_initialized"
+        account.updated_at = time.time()
+        return account
+
+    def initialize_credentials(self, account: AgentAccount) -> str:
+        raise ProviderOperationUnavailable("Provider does not expose this operation: raw credential initialization")
+
+    def initialize_browser_session(self, account: AgentAccount, profile_dir: Path) -> AgentAccount:
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        account.browser_profile = str(profile_dir)
+        account.session_state = "initialized"
+        account.state = "browser_initialized"
+        account.updated_at = time.time()
+        return account
+
+    def verify_state(self, account: AgentAccount) -> AgentAccount:
+        account.verification_state = "provider_state_required"
+        account.state = "verification_required"
+        account.updated_at = time.time()
+        return account
+
+    def recover_session(self, account: AgentAccount) -> AgentAccount:
+        account.session_state = "reauthentication_required"
+        account.state = "reauthentication_required"
+        account.updated_at = time.time()
+        return account
+
+    def rotate_credentials(self, account: AgentAccount) -> str:
+        raise ProviderOperationUnavailable("Provider does not expose this operation: credential rotation in this runtime")
+
+    def revoke_account(self, account: AgentAccount) -> AgentAccount:
+        account.state = "revocation_requested"
+        account.session_state = "revoked"
+        account.updated_at = time.time()
+        return account
+
+
+class LocalManagedAccountProvisioner:
+    """A real local Account Runtime for development and provider adapters.
+
+    It creates persistent local account records and browser profiles, but it
+    never pretends that a local record is a third-party Google account.
+    """
+
+    provider = "local"
+
+    def __init__(self, root: Path, vault: AccountVault | None = None):
+        self.root = root.expanduser().resolve()
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.vault = vault or AccountVault(self.root / "vault")
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider=self.provider,
+            account_creation="supported_local_only",
+            identity_initialization="supported_reference_only",
+            credential_initialization="not_accepted",
+            browser_session="supported",
+            persistent_session="supported",
+            verification="manual_or_provider_signal",
+            recovery="reference_only",
+            credential_rotation="not_accepted",
+            revocation="supported_local_record",
+        )
+
+    def can_create_account(self) -> bool:
+        return True
+
+    def create_account(self, agent_id: str, display_name: str) -> AgentAccount:
+        if not agent_id.strip() or not display_name.strip():
+            raise AccountError("agent_id and display_name are required")
+        account_id = "acct-" + uuid.uuid4().hex
+        handle = f"agent_account://local/{account_id}"
+        now = time.time()
+        account = AgentAccount(
+            account_id=account_id,
+            handle=handle,
+            agent_id=agent_id.strip(),
+            provider=self.provider,
+            display_name=display_name.strip(),
+            state="created",
+            created_at=now,
+            updated_at=now,
+            authorization_basis="local_runtime",
+        )
+        self._write(account)
+        return account
+
+    def initialize_identity(self, account: AgentAccount, identity_id: str) -> AgentAccount:
+        if not identity_id or "/" in identity_id or "\\" in identity_id:
+            raise AccountError("identity_id must be a non-secret reference")
+        account.identity_id = identity_id
+        account.state = "identity_initialized"
+        account.updated_at = time.time()
+        self._write(account)
+        return account
+
+    def initialize_credentials(self, account: AgentAccount) -> str:
+        raise ProviderOperationUnavailable("Local runtime does not accept raw credentials; configure an external vault adapter")
+
+    def initialize_browser_session(self, account: AgentAccount, profile_dir: Path) -> AgentAccount:
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        account.browser_profile = str(profile_dir.resolve())
+        account.session_state = "initialized"
+        account.state = "browser_initialized"
+        account.updated_at = time.time()
+        self._write(account)
+        return account
+
+    def verify_state(self, account: AgentAccount) -> AgentAccount:
+        account.verification_state = "provider_state_required"
+        account.state = "verification_required"
+        account.updated_at = time.time()
+        self._write(account)
+        return account
+
+    def recover_session(self, account: AgentAccount) -> AgentAccount:
+        account.session_state = "reauthentication_required"
+        account.state = "reauthentication_required"
+        account.updated_at = time.time()
+        self._write(account)
+        return account
+
+    def rotate_credentials(self, account: AgentAccount) -> str:
+        raise ProviderOperationUnavailable("Local runtime does not rotate raw credentials")
+
+    def revoke_account(self, account: AgentAccount) -> AgentAccount:
+        account.state = "revoked"
+        account.session_state = "revoked"
+        account.updated_at = time.time()
+        self._write(account)
+        return account
+
+    def get(self, account_id: str) -> AgentAccount:
+        if not account_id or "/" in account_id or "\\" in account_id:
+            raise ValueError("invalid account id")
+        path = self.root / f"{account_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(f"account not found: {account_id}")
+        return AgentAccount(**json.loads(path.read_text(encoding="utf-8")))
+
+    def _write(self, account: AgentAccount) -> None:
+        (self.root / f"{account.account_id}.json").write_text(
+            json.dumps(account.safe_metadata(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
