@@ -3,14 +3,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentguard-local"
-version = "0.1.0"
-description = "Controlled identity-session, browser lifecycle, timer, observer, and policy guardrails for user-owned AI agents"
+name = "agent-account-google-id"
+version = "0.2.0"
+description = "Agent Account Google ID — Give Your AI an Identity: controlled sessions, authorized identity references, and browser lifecycle for user-owned agents"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]
+agent-account-google-id = "agentguard.cli:main"
 agentguard = "agentguard.cli:main"
 
 [tool.setuptools]

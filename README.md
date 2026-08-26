@@ -2,7 +2,9 @@
 
 **Agent Account Google ID** is a local-first control plane around a user-owned AI agent such as Claude Code or Codex CLI. The user brings the agent, model access, API keys, workspace, and execution environment. The project adds a bounded session, an isolated browser-profile lifecycle, an operator-authorized identity reference, a redacted live event stream, pause/stop controls, policy checks, and cleanup.
 
-The Python package and command remain named `agentguard` for compatibility with the first MVP. The GitHub repository name is intentionally unchanged.
+الـ Tool دي معمولة عشان تدي الـ Agent هوية تشغيل وجلسة متصفح ووقت محدد. أنت بتجيب الـ Agent والنموذج والبيئة، وتقول له المهمة والمدة، وهو يستدعي الأداة. الاسم الأساسي للمنتج هو **Agent Account Google ID — Give Your AI an Identity**. أمر `agentguard` القديم يفضل موجود عشان التوافق، ومعاه أمر `agent-account-google-id` باسم المنتج.
+
+The Python compatibility command remains named `agentguard`, while the product-facing command is `agent-account-google-id`. The GitHub repository name is intentionally unchanged.
 
 > Give the agent a clock, a controlled identity reference, a visible trail, and an emergency stop—without becoming a password broker or a shared-account service.
 
@@ -27,21 +29,27 @@ The Python package and command remain named `agentguard` for compatibility with 
 
 ## Quick start: supervise an agent
 
+من داخل مجلد المشروع ثبّت الأداة مرة واحدة، وبعدها استخدم اسم المنتج في الأوامر:
+
+```bash
+python3 -m pip install -e .
+```
+
 From the repository root:
 
 ```bash
-python -m agentguard run --ttl 1800 --workspace . -- codex
+agent-account-google-id run --ttl 1800 --workspace . -- codex
 ```
 
 The command prints a session ID. In another terminal:
 
 ```bash
-python -m agentguard list
-python -m agentguard watch <session-id> --follow
-python -m agentguard browser watch <browser-session-id> --follow
-python -m agentguard pause <session-id>
-python -m agentguard resume <session-id>
-python -m agentguard stop <session-id> --reason user_requested
+agent-account-google-id list
+agent-account-google-id watch <session-id> --follow
+agent-account-google-id browser watch <browser-session-id> --follow
+agent-account-google-id pause <session-id>
+agent-account-google-id resume <session-id>
+agent-account-google-id stop <session-id> --reason user_requested
 ```
 
 Claude Code hook adapter example:
@@ -62,7 +70,7 @@ python adapters/codex_run.py --ttl 1800 --workspace . -- codex
 For a Google identity that is already provisioned and authorized, the package can perform a one-time installed-app OAuth flow using PKCE and identity scopes only. The command opens Google's normal consent screen, receives a short-lived access token in memory, obtains subject/email metadata, and persists only the non-secret identity reference:
 
 ```bash
-python -m agentguard google-auth \
+agent-account-google-id google-auth \
   --client-id <installed-app-client-id> \
   --identity-dir ~/.agentguard/identities
 ```
@@ -72,7 +80,7 @@ The OAuth command does **not** create a Google account, request Gmail/Drive/admi
 If metadata is already available from an authorized provider flow, use:
 
 ```bash
-python -m agentguard identity attach \
+agent-account-google-id identity attach \
   --provider google \
   --subject provider-subject-id \
   --email agent@example.com \
@@ -87,7 +95,7 @@ Only the returned non-secret `identity_id` should be used in a browser manifest.
 When a non-secret identity reference and approved domains already exist, the user can request one supervised run. The tool creates the browser context before the Agent starts, passes only session identifiers/profile metadata through `AGENTGUARD_*` variables, and cleans up after the Agent exits or the TTL expires:
 
 ```bash
-python -m agentguard run \
+agent-account-google-id run \
   --ttl 1800 \
   --identity-id <identity-id> \
   --allow-domain example.com \
@@ -103,7 +111,7 @@ This is the intended agent-to-tool orchestration path: the user specifies the ta
 Create an ephemeral profile with an allowlist:
 
 ```bash
-python -m agentguard browser create \
+agent-account-google-id browser create \
   --ttl 1800 \
   --allow-domain example.com \
   --allow-domain login.example.com \
@@ -114,22 +122,22 @@ python -m agentguard browser create \
 Check a target before navigation:
 
 ```bash
-python -m agentguard browser check-url <browser-session-id> https://example.com/task
-python -m agentguard browser check-url <browser-session-id> https://mail.google.com/
+agent-account-google-id browser check-url <browser-session-id> https://example.com/task
+agent-account-google-id browser check-url <browser-session-id> https://mail.google.com/
 ```
 
 Launch a local Chromium-compatible browser. The default command waits until TTL and then cleans the profile; use `--detach` only when an external supervisor will call cleanup:
 
 ```bash
-python -m agentguard browser launch <browser-session-id> --url https://example.com/task
+agent-account-google-id browser launch <browser-session-id> --url https://example.com/task
 ```
 
 Login is an explicit operator handoff, not automated credential entry:
 
 ```bash
-python -m agentguard browser login-handoff <browser-session-id> example.com
+agent-account-google-id browser login-handoff <browser-session-id> example.com
 # The authorized operator completes the provider's normal login/MFA/CAPTCHA flow.
-python -m agentguard browser login-complete <browser-session-id> example.com
+agent-account-google-id browser login-complete <browser-session-id> example.com
 ```
 
 The browser policy is a decision layer. It is **not** an OS firewall, a Chromium extension, a proxy, or a guarantee that every navigation inside a browser will be intercepted. The automatic `run` path gives the Agent safe session metadata; a provider-specific runtime is still required for a real authorized identity to perform an OAuth/API action. For untrusted agents, combine it with a container or VM, a real egress firewall, and provider-approved account controls.
@@ -140,7 +148,13 @@ This project is designed for an identity owned or explicitly authorized by the o
 
 The existing command policy is a **guardrail**, not a complete sandbox. Regex and substring checks can be bypassed by scripts, aliases, encoding, interpreters, or child processes. The browser allowlist is likewise a policy decision point, not a complete network isolation boundary. Strong isolation requires a user-controlled container/VM and an OS-level egress policy.
 
-The current browser login completion event is a user/operator assertion with `verified: false`; it is deliberately not proof of authentication. Any future provider adapter must document authorization, scope, retention, revocation, and acceptable-use requirements before it is enabled.
+The current browser login completion event is a user/operator assertion with `verified: false`; it is deliberately not proof of authentication. The supported-site matrix in [`SUPPORTED_SITES.md`](SUPPORTED_SITES.md) lists the provider conditions and does not turn arbitrary browser pages into supported login targets.
+
+## المواقع والـ Agents والمتطلبات
+
+بص، قائمة المواقع وطريقة الدخول ومكان التشغيل ومتطلبات الأداة مكتوبة بالتفصيل في [`SUPPORTED_SITES.md`](SUPPORTED_SITES.md). هناك فرق بين موقع عنده OAuth/OIDC أو API رسمي، وموقع عنده زر Google فقط، وموقع لا يدعم تكاملًا رسميًا. الأداة لا تعلن أن كل موقع يقبل Google تلقائيًا.
+
+الأداة تشتغل مع Claude Code وCodex مباشرة، وتقدر تشغل Agents أخرى كأوامر محلية، بينما تكامل Gemini CLI وGitHub Copilot CLI وMCP موثق كمسارات توسعة وليس كتكاملات مكتملة.
 
 ## Supported agents
 
@@ -151,10 +165,11 @@ The current first-class adapters are Claude Code hooks and the Codex process wra
 The project has no runtime dependencies beyond Python 3.10+.
 
 ```bash
-python -m pytest -q
-python -m compileall -q agentguard adapters
-python -m agentguard --help
+python3 -m pytest -q
+python3 -m compileall -q agentguard adapters
+agent-account-google-id --help
 ```
+
 
 ## Layout
 
@@ -164,6 +179,7 @@ adapters/         Claude Code hook and Codex process adapters
 skill/            Chat-invocable skill instructions
 tests/            Unit tests
 docs/             Threat model, browser/identity boundary, and integration notes
+SUPPORTED_SITES.md Sites, Agents, places to run, requirements, and direct user workflow
 DESIGN_REVIEW.md  Architecture review and decisions
 ```
 
