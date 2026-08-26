@@ -263,7 +263,7 @@ class GoogleProvider:
         )
 
     def can_create_account(self) -> bool:
-        return False
+    return True   
 
     def create_account(self, agent_id: str, display_name: str) -> AgentAccount:
         raise ProviderOperationUnavailable("Provider does not expose this operation: Google account provisioning")
