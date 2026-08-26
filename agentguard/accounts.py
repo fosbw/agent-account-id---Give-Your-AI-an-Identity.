@@ -7,7 +7,13 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, TypeVar
-
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+import random
+from unidecode import unidecode
 
 T = TypeVar("T")
 
@@ -413,3 +419,111 @@ class GoogleProvider:
         (self.root / f"{account.account_id}.json").write_text(
             json.dumps(account.safe_metadata(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
+class GoogleCreatorProvider(GoogleProvider):
+    def __init__(self, vault: AccountVault | None = None, headless: bool = False):
+        super().__init__(vault)
+        self.headless = headless
+
+    def can_create_account(self) -> bool:
+        return True
+
+    def _generate_random_data(self):
+        first_names = ["Ahmed", "Mohamed", "Youssef", "Ali", "Hassan", "Omar", "Khaled", "Said"]
+        last_names = ["Hassan", "Ibrahim", "Said", "Mohamed", "Ali", "Youssef", "Omar", "Khaled"]
+        
+        first = random.choice(first_names)
+        last = random.choice(last_names)
+        first_clean = unidecode(first).lower()
+        last_clean = unidecode(last).lower()
+        username = f"{first_clean}.{last_clean}{random.randint(1000, 9999)}"
+        
+        return {
+            "first": first,
+            "last": last,
+            "username": username,
+            "password": f"Test@{random.randint(1000, 9999)}!",
+            "birthday": str(random.randint(1, 28)),
+            "birth_month": str(random.randint(1, 12)),
+            "birth_year": str(random.randint(1970, 2005)),
+            "gender": "2"
+        }
+
+    def create_account(self, agent_id: str, display_name: str) -> AgentAccount:
+        if not agent_id.strip() or not display_name.strip():
+            raise AccountError("agent_id and display_name are required")
+
+        data = self._generate_random_data()
+        email = f"{data['username']}@gmail.com"
+
+        chrome_options = Options()
+        if self.headless:
+            chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        
+        driver = webdriver.Chrome(options=chrome_options)
+        
+        try:
+            driver.get("https://accounts.google.com/signup")
+            wait = WebDriverWait(driver, 15)
+
+            wait.until(EC.presence_of_element_located((By.NAME, "firstName"))).send_keys(data["first"])
+            driver.find_element(By.NAME, "lastName").send_keys(data["last"])
+            driver.find_element(By.ID, "accountDetailsNext").click()
+            time.sleep(2)
+
+            wait.until(EC.presence_of_element_located((By.NAME, "Username"))).send_keys(data["username"])
+            driver.find_element(By.NAME, "Passwd").send_keys(data["password"])
+            driver.find_element(By.NAME, "ConfirmPasswd").send_keys(data["password"])
+            driver.find_element(By.ID, "accountDetailsNext").click()
+            time.sleep(2)
+
+            wait.until(EC.presence_of_element_located((By.NAME, "BirthDay"))).send_keys(data["birthday"])
+            driver.find_element(By.NAME, "BirthMonth").send_keys(data["birth_month"])
+            driver.find_element(By.NAME, "BirthYear").send_keys(data["birth_year"])
+            driver.find_element(By.NAME, "Gender").send_keys(data["gender"])
+
+            print("=" * 60)
+            print("✅ تم ملء كل البيانات بنجاح!")
+            print(f"📧 الإيميل: {email}")
+            print(f"🔑 كلمة السر: {data['password']}")
+            print("=" * 60)
+            print("⏳ السكربت واقف عند شاشة رقم التليفون و reCAPTCHA...")
+            print("📱 أكمل أنت باقي الخطوات (رقم التليفون والتحقق)")
+            print("⌨️  بعد ما تكمل التحقق، اضغط Enter عشان السكربت يكمل...")
+            input()
+
+            try:
+                driver.find_element(By.ID, "accountDetailsNext").click()
+                time.sleep(3)
+                print("🎉 تم إنشاء الحساب بنجاح!")
+            except:
+                print("⚠️ مشكلة في الضغط على التالي، ممكن تكون خلصت الخطوات بإيدك.")
+
+        except Exception as e:
+            raise AccountError(f"Failed to create Google account: {e}")
+        finally:
+            driver.quit()
+
+        account_id = "gmail-" + uuid.uuid4().hex
+        handle = f"agent_account://google/{account_id}"
+        now = time.time()
+
+        account = AgentAccount(
+            account_id=account_id,
+            handle=handle,
+            agent_id=agent_id.strip(),
+            provider="google",
+            display_name=display_name.strip(),
+            state="created",
+            created_at=now,
+            updated_at=now,
+            external_account_ref=email,
+            authorization_basis="provider_authorized"
+        )
+
+        secret_ref = self.vault.put_secret(handle, "password", data["password"])
+        account.external_account_ref = secret_ref
+
+        self._write(account)
+        return account
