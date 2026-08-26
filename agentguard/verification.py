@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -48,6 +49,7 @@ class ChatVerificationEvent:
             "status": self.status,
             "message": self.message,
         }
+
 
 class ChatVerificationHandoff:
     """
@@ -121,9 +123,8 @@ class ChatVerificationHandoff:
                 )
             
             self.otp_code = normalized
-            self.verification_completed = True
             
-            # 🔥 Automatically enter OTP in browser
+            # 🔥 Automatically enter OTP in browser and verify
             result = self.enter_otp(normalized)
             
             return {
@@ -167,7 +168,7 @@ class ChatVerificationHandoff:
             return f"❌ Failed to enter phone number: {e}"
 
     def enter_otp(self, otp: str) -> str:
-        """Enter OTP code into the browser automatically."""
+        """Enter OTP code into the browser automatically and verify."""
         if not self.driver:
             return "❌ Browser driver not available. Please complete verification manually in the browser."
 
@@ -182,7 +183,21 @@ class ChatVerificationHandoff:
             otp_input.clear()
             otp_input.send_keys(otp)
             self.driver.find_element(By.ID, "verify").click()
-            self.verification_completed = True
-            return "✅ OTP code entered. Verification complete!"
+            
+            # 🔥 Wait and check if verification actually succeeded
+            time.sleep(3)
+            
+            # Check if we're still on verification page or moved to dashboard
+            try:
+                # If this element exists, we're still on verification page
+                self.driver.find_element(By.ID, "code")
+                self.verification_completed = False
+                return "❌ OTP entered but verification failed. Please check your code and try again, or send DONE if you completed manually."
+            except:
+                # Element not found → we're on a different page → success
+                self.verification_completed = True
+                return "✅ OTP code entered and verified by Google successfully!"
+                
         except Exception as e:
+            self.verification_completed = False
             return f"❌ Failed to enter OTP: {e}"
