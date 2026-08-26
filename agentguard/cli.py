@@ -26,7 +26,7 @@ from .web_runtime import UniversalWebRuntime, WebActionRequest
 from .policy import Policy
 from .redaction import Redactor
 from .supervisor import SessionPaths, Supervisor
-
+from .accounts import AccountVault, GoogleProvider, GoogleCreatorProvider, LocalManagedAccountProvisioner
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentguard", description="Controlled sessions for user-owned AI agents")
@@ -445,6 +445,7 @@ def cmd_account(args) -> int:
         rows = registry.list_sites() if not args.site_id else [registry.get_site(args.site_id)]
         print(json.dumps([row.safe_metadata() for row in rows], ensure_ascii=False, indent=2))
         return 0
+
     if args.account_action == "capabilities":
         providers = [args.provider] if args.provider else ["google", "github", "local"]
         rows = []
@@ -458,24 +459,32 @@ def cmd_account(args) -> int:
             rows.append(descriptor.safe_metadata())
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
-    manager = account_manager_from(args)
+
+    # 🔥 استخدم GoogleCreatorProvider بدل LocalManagedAccountProvisioner
+    root = args.account_dir or Path.home() / ".agentguard" / "accounts"
+    vault = AccountVault(root)
+    manager = GoogleCreatorProvider(vault=vault, headless=False)
+
     if args.account_action == "create":
         account = manager.create_account(args.agent_id, args.display_name)
         print(json.dumps(account.safe_metadata(), ensure_ascii=False, indent=2))
         return 0
+
     if args.account_action == "show":
         print(json.dumps(manager.get(args.account_id).safe_metadata(), ensure_ascii=False, indent=2))
         return 0
+
     if args.account_action == "revoke":
         account = manager.revoke_account(manager.get(args.account_id))
         print(json.dumps(account.safe_metadata(), ensure_ascii=False, indent=2))
         return 0
+
     if args.account_action == "vault-reference":
         reference_id = manager.vault.put_reference(args.handle)
         print(json.dumps({"reference_id": reference_id, "handle": args.handle}, ensure_ascii=False, indent=2))
         return 0
-    raise SystemExit("unknown account action")
 
+    raise SystemExit("unknown account action")
 
 def cmd_identity(args) -> int:
     store = identity_store_from(args)
