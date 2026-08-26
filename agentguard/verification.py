@@ -49,7 +49,6 @@ class ChatVerificationEvent:
             "message": self.message,
         }
 
-
 class ChatVerificationHandoff:
     """
     Chat-safe bridge that accepts phone number and OTP from chat,
@@ -74,76 +73,75 @@ class ChatVerificationHandoff:
             message=(
                 "🔐 Verification required.\n\n"
                 "📱 Please send:\n"
-                "1. Your phone number (11 digits, e.g., 01234567890)\n"
+                "1. Your phone number (international format, e.g., +201234567890)\n"
                 "2. After receiving the SMS, send the OTP code (4-6 digits)\n\n"
                 "⚠️ Do not send DONE until after you've sent both the phone number and OTP."
             ),
         )
-def resume_from_chat(self, session_id: str, domain: str, message: str) -> dict[str, object]:
-    """
-    Accepts phone number, OTP, or DONE from chat.
-    - Phone number: international format (e.g., +201234567890, 01234567890, +1 234 567 890)
-    - OTP: 4-6 digits
-    - DONE: signals completion
-    """
-    normalized = " ".join((message or "").strip().split())
-    normalized_lower = normalized.casefold()
 
-    # 1️⃣ Check if it's a DONE message
-    if normalized_lower in _DONE_MESSAGES:
-        if not self.verification_completed:
-            raise AccountError(
-                "⚠️ Verification not completed yet. "
-                "Please send your phone number and OTP code first."
-            )
-        return self.browser.resume_after_verification(session_id, domain)
+    # ===================== الدالة الأساسية =====================
+    def resume_from_chat(self, session_id: str, domain: str, message: str) -> dict[str, object]:
+        """
+        Accepts phone number, OTP, or DONE from chat.
+        - Phone number: international format (e.g., +201234567890, 01234567890, +1 234 567 890)
+        - OTP: 4-6 digits
+        - DONE: signals completion
+        """
+        normalized = " ".join((message or "").strip().split())
+        normalized_lower = normalized.casefold()
 
-    # 2️⃣ Check if it's a phone number (international format)
-    # Supports: +201234567890, 01234567890, +1 234 567 890, 0049123456789
-    phone_pattern = re.compile(
-        r'^(\+?\d{1,4}[\s\-]?)?\(?\d{1,4}\)?[\s\-]?\d{1,4}[\s\-]?\d{1,9}$'
-    )
-    if re.match(r'^\+?[0-9\s\-()]{7,20}$', normalized):
-        self.phone_number = normalized
-        self.verification_completed = False
-        
-        # 🔥 Automatically enter phone number in browser
-        result = self.enter_phone_number(normalized)
-        
-        return {
-            "status": "phone_received",
-            "message": f"✅ {result}",
-            "next_step": "send_otp"
-        }
+        # 1️⃣ Check if it's a DONE message
+        if normalized_lower in _DONE_MESSAGES:
+            if not self.verification_completed:
+                raise AccountError(
+                    "⚠️ Verification not completed yet. "
+                    "Please send your phone number and OTP code first."
+                )
+            return self.browser.resume_after_verification(session_id, domain)
 
-    # 3️⃣ Check if it's an OTP code (4-6 digits)
-    if re.match(r'^[0-9]{4,6}$', normalized):
-        if not self.phone_number:
-            raise AccountError(
-                "⚠️ Please send your phone number first, then the OTP code."
-            )
-        
-        self.otp_code = normalized
-        self.verification_completed = True
-        
-        # 🔥 Automatically enter OTP in browser
-        result = self.enter_otp(normalized)
-        
-        return {
-            "status": "otp_received",
-            "message": f"✅ {result}",
-            "next_step": "done"
-        }
+        # 2️⃣ Check if it's a phone number (international format)
+        if re.match(r'^\+?[0-9\s\-()]{7,20}$', normalized):
+            self.phone_number = normalized
+            self.verification_completed = False
+            
+            # 🔥 Automatically enter phone number in browser
+            result = self.enter_phone_number(normalized)
+            
+            return {
+                "status": "phone_received",
+                "message": f"✅ {result}",
+                "next_step": "send_otp"
+            }
 
-    # 4️⃣ Invalid input
-    raise AccountError(
-        "⚠️ Invalid input.\n"
-        "Please send:\n"
-        "- Phone number: international format (e.g., +201234567890, 01234567890)\n"
-        "- OTP code: 4-6 digits\n"
-        "- DONE: after completing verification"
-    )
+        # 3️⃣ Check if it's an OTP code (4-6 digits)
+        if re.match(r'^[0-9]{4,6}$', normalized):
+            if not self.phone_number:
+                raise AccountError(
+                    "⚠️ Please send your phone number first, then the OTP code."
+                )
+            
+            self.otp_code = normalized
+            self.verification_completed = True
+            
+            # 🔥 Automatically enter OTP in browser
+            result = self.enter_otp(normalized)
+            
+            return {
+                "status": "otp_received",
+                "message": f"✅ {result}",
+                "next_step": "done"
+            }
 
+        # 4️⃣ Invalid input
+        raise AccountError(
+            "⚠️ Invalid input.\n"
+            "Please send:\n"
+            "- Phone number: international format (e.g., +201234567890, 01234567890)\n"
+            "- OTP code: 4-6 digits\n"
+            "- DONE: after completing verification"
+        )
+
+    # ===================== دوال إدخال البيانات في المتصفح =====================
     def set_driver(self, driver):
         """Set the Selenium driver for automatic input."""
         self.driver = driver
