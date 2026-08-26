@@ -14,7 +14,7 @@ The Agent calls the tool. The tool checks the Agent identity and capabilities, c
 
 ## The site list
 
-The current matrix contains **10 named service entries**.
+The current matrix contains **11 named service entries**.
  They are integration targets with explicit provider conditions. A named site is not automatically a working login adapter just because it has a Google sign-in button.
 
 | # | Service | Official path that may be used | Current status |
@@ -29,8 +29,9 @@ The current matrix contains **10 named service entries**.
 | 8 | GitHub | GitHub OAuth App, GitHub App, or Enterprise SSO | **Implemented for authorized API actions** through `GitHubProviderAdapter`; browser login remains provider-specific. |
 | 9 | Public login demo (`the-internet.herokuapp.com`) | Site-published demo credentials through the scoped Browser Authentication Runtime | **Implemented as a public test integration only** through `DemoLoginAdapter`; not a production provider or universal login bridge. |
 | 10 | Expand Testing practice (`practice.expandtesting.com`) | Real browser signup and login in the public automation-testing environment | **Implemented as the first real browser provisioning test provider** through `ExpandTestingProvider`; creates an external test account, stores credentials behind the internal Vault boundary, verifies `/secure`, and records a process-bound session recovery limitation. |
+| 11 | AutomationExercise (`automationexercise.com`) | Real browser signup, login, authenticated home-page read, and same-profile/session recovery | **Implemented as the second real browser provisioning test provider** through `AutomationExerciseProvider`; uses normal multi-field signup controls and proves a new-process authenticated action without credential injection. |
 
-The number of services documented is **10**. The number of production third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The repository includes **1 public test-site Browser Authentication adapter** and **1 real public test-site browser provisioning adapter**. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; the Demo is intentionally limited to form discovery, login, verification, safe session metadata, and persistent-profile lifecycle testing; Expand Testing is intentionally limited to public test-account creation, login, authenticated-page verification, and safe provider-limitation reporting.
+The number of services documented is **11**. The number of production third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The repository includes **1 public test-site Browser Authentication adapter** and **2 real public test-site browser provisioning adapters**. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; the Demo is intentionally limited to form discovery, login, verification, safe session metadata, and persistent-profile lifecycle testing; Expand Testing and AutomationExercise are intentionally limited to public test-account creation, login, authenticated-page verification, and provider-specific session behavior.
 
 ## What counts as a supported login path
 
@@ -70,7 +71,7 @@ You need Python 3.10 or newer, Git, a supported Agent or local command, a worksp
 
 For Google OAuth, you need an Installed-App OAuth Client and a Google identity that is already owned and authorized by the operator or organization. The current flow requests identity scopes only and does not create a Google account or request Gmail, Drive, recovery, payment, or administration access.
 
-For a production external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. The public Demo integration is a test-only exception with site-published credentials held inside the process-bound Vault. The Expand Testing integration is also test-only: the tool generates a provider-valid username and password, creates the external practice account through Chrome, then authenticates and reads the protected page. Its session cookies are process-bound and are not treated as persistent authentication after a complete process restart.
+For a production external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. The public Demo integration is a test-only exception with site-published credentials held inside the process-bound Vault. The Expand Testing integration is also test-only: the tool generates a provider-valid username and password, creates the external practice account through Chrome, then authenticates and reads the protected page. Its session cookies are process-bound and are not treated as persistent authentication after a complete process restart. The AutomationExercise integration is test-only: the tool generates a provider-valid signup identity, creates the account through Chrome, logs out, logs in through the generic Browser Authentication Runtime, reads the authenticated home page, and verifies recovery with the same Profile/session state in a new browser process.
  Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
 
 ## The one-command workflow
@@ -141,7 +142,7 @@ agent-account-google-id browser authenticate <browser-session-id> \\
   --install-demo-credentials
 ```
 
-The CLI exposes the lifecycle and control surfaces. It does not claim to provision a third-party consumer account when the provider has not exposed that operation.
+The CLI exposes the lifecycle and control surfaces. It does not claim to provision a third-party consumer account when the provider has not exposed that operation. The `browser provision --provider` selector currently supports only the two named public practice adapters and does not imply universal signup automation.
 
 ## Product boundary
 

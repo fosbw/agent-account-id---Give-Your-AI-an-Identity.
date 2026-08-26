@@ -60,6 +60,12 @@ class BrowserAutomation(Protocol):
     def fill(self, selector: str, value: str) -> None:
         ...
 
+    def select(self, selector: str, value: str) -> None:
+        ...
+
+    def check(self, selector: str) -> None:
+        ...
+
     def submit(self, selector: str) -> None:
         ...
 
@@ -182,6 +188,12 @@ class AgentBrowserAutomation:
 
     def fill(self, selector: str, value: str) -> None:
         self._run("fill", selector, value)
+
+    def select(self, selector: str, value: str) -> None:
+        self._run("select", selector, value)
+
+    def check(self, selector: str) -> None:
+        self._run("check", selector)
 
     def submit(self, selector: str) -> None:
         self._run("click", selector)

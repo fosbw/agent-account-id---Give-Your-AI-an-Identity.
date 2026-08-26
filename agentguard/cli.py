@@ -12,6 +12,7 @@ from .accounts import AccountVault, GoogleProvider, LocalManagedAccountProvision
 from .browser import BrowserSessionManager
 from .browser_auth import AgentBrowserAutomation, BrowserAuthenticationRuntime, DemoCredentialProvider, DemoLoginAdapter, LoginRequest
 from .expandtesting_provider import ExpandTestingProvider
+from .automationexercise_provider import AutomationExerciseProvider
 from .provisioning import AccountProvisioningRuntime, ProvisioningRequest
 from .capabilities import CapabilityRegistry
 from .events import EventLog
@@ -190,7 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
     browser_provision.add_argument("--agent-id", required=True)
     browser_provision.add_argument("--display-name", required=True)
     browser_provision.add_argument("--stable-agent-id", default=None)
-    browser_provision.add_argument("--provider", choices=("expandtesting",), default="expandtesting")
+    browser_provision.add_argument("--provider", choices=("expandtesting", "automationexercise"), default="expandtesting")
     browser_provision.add_argument("--ttl", type=float, required=True)
     browser_provision.add_argument("--browser-session-name", required=True)
     browser_provision.add_argument("--agent-key-stdin", action="store_true", help="read Agent Key from stdin; never pass it as an argument")
@@ -552,7 +553,7 @@ def cmd_browser_provision(args) -> int:
     runtime_dir = args.runtime_dir or Path.home() / ".agent-account-google-id" / "expandtesting-runtime"
     manager = BrowserSessionManager(args.browser_dir or runtime_dir / "browser-sessions")
     vault = AccountVault(args.vault_dir or runtime_dir / "credential-vault")
-    provider = ExpandTestingProvider()
+    provider = ExpandTestingProvider() if args.provider == "expandtesting" else AutomationExerciseProvider()
     request = ProvisioningRequest(
         organization_id=args.organization_id,
         agent_id=args.agent_id,

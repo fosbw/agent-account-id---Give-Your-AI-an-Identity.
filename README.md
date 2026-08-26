@@ -27,6 +27,7 @@ A task can use a real browser and real Internet only inside an environment owned
 | Google identity | Supports the official limited identity OAuth flow and stores identity metadata only. Google account provisioning is reported as unavailable when the provider does not expose that operation. |
 | GitHub Provider | Real GitHub App/OAuth token authentication and read actions through the official REST API; browser login remains provider-specific. |
 | Expand Testing Provider | Real browser signup, credential placement through the internal Vault boundary, login, authenticated-page verification, and harmless page reading on the public practice environment. |
+| AutomationExercise Provider | A second real browser signup/login integration using a multi-field form, normal dropdowns and checkboxes, authenticated home-page action, and same-profile/session recovery. |
 | Persistent browser profile | A profile can be attached to an Agent Account and retained between tasks. Timer expiry ends the task/session; it does not delete the account record or persistent profile. |
 | Browser policy | Enforces HTTPS, domain allowlists, blocked sensitive Google areas, and private/local/metadata host blocking. |
 | Live Browser State | Records current URL, page label, current action, login state, verification state, session status, and timer metadata without secrets. |
@@ -199,6 +200,8 @@ printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id browser pro
 
 The command returns only safe identity, account, external-account reference, browser, and authentication metadata. The external reference is backed by the real signup and the subsequent real login; a local Account Record alone is never treated as proof. The practice site's authentication uses process-bound session cookies, so the provider capability reports reauthentication required after a complete browser process restart even though the Account Record and persistent Profile remain. This is recorded as a provider limitation rather than hidden or bypassed.
 
+`AutomationExerciseProvider` reuses the same generic provisioning and authentication runtimes against a second real public practice environment. Its adapter-specific responsibilities are limited to the multi-step signup fields, normal dropdown/checkbox controls, provider success markers, logout-before-login proof, and target URLs. The live run created an external account, logged in with the generated Vault credential, read the authenticated home page, then restored the authenticated state in a new browser process using the same Account/Profile without credential injection.
+
 ## First real Provider: GitHub
 
 GitHub is the first real provider adapter in this repository. It links an existing authorized GitHub App installation or caller-owned GitHub token through the internal Vault boundary, validates the Provider Session with the official GitHub REST API, and executes safe read actions. It does not create a GitHub account, import browser cookies, or expose the token to the Agent.
@@ -246,7 +249,7 @@ The provider declares its real capabilities. The Google provider in this reposit
 
 This project is a control plane and guardrail layer. It is not an operating-system sandbox or a full network firewall. Strong isolation requires a user-controlled container or VM, an OS-level egress policy, a provider-approved identity, and an external secret manager.
 
-Raw credentials must never enter the model context, tool output, event logs, Live View, GitHub, or command-line arguments. The current vault accepts provider secrets only through internal adapter calls, keeps raw values process-bound, and stores only opaque references and safe metadata on disk. It does not persist passwords, cookies, OAuth tokens, recovery codes, or private keys.
+Raw credentials must never enter the model context, tool output, event logs, Live View, GitHub, or command-line arguments. The current vault accepts provider secrets only through internal adapter calls, keeps raw values process-bound, and stores only opaque references and safe metadata on disk. It does not persist passwords, cookies, OAuth tokens, recovery codes, or private keys. The second live provider test proves session recovery from browser persistence state without exposing that state to the Agent.
 
 The tool does not create or distribute consumer accounts, bypass CAPTCHA/MFA/anti-bot controls, change recovery settings, or provide unrestricted “log in anywhere” automation. When a provider does not expose an operation, the provider adapter reports that operation as unavailable.
 

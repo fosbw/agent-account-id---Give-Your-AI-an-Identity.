@@ -22,6 +22,8 @@ The Browser Authentication Runtime provides a generic `LoginRequest`, `LoginAdap
 
 The Account Provisioning Runtime adds the missing external-account stage. `AccountNamingPolicy` creates a deterministic provider-valid identity from organization, Agent, provider, and stable Agent identifier inputs without embedding the Agent Key. `ExpandTestingProvider` is a real browser-only integration for the public Automation Testing Practice environment: it creates an external test account through signup, stores the generated credential bundle behind the internal Vault boundary, logs in with the account created by the tool, verifies `/secure`, and records a harmless authenticated-page read. Its site uses process-bound session cookies, so capability metadata reports reauthentication required after a complete browser process restart; Account Record and Profile retention are still preserved.
 
+`AutomationExerciseProvider` reuses the same generic Account Provisioning and Browser Authentication runtimes against a second real public practice environment. It handles only provider-specific normal signup controls, success markers, logout-before-login proof, and URLs. A live run created an external account, logged in with the generated Vault credential, read the authenticated home page, and restored the authenticated state in a new browser process using the same Account/Profile without credential injection.
+
 The CLI includes:
 
 ```text
@@ -63,6 +65,8 @@ The repository documentation is in English and uses the product name: README, Sk
 | `agent-account-google-id --help` | Passed; includes Account and Browser commands |
 | Browser Authentication unit tests | Passed: Vault isolation, form detection, safe state, Provider Session persistence, failure state, Kill/Cleanup revocation, and same-profile restart |
 | Account Provisioning unit tests | Passed: deterministic naming, external-account/Vault/Profile linkage, safe authenticated action, Kill preservation, and Provider Session revocation |
+| Real second-provider Full Flow | **Passed live**: AutomationExercise signup -> external account creation -> logout -> Vault-backed login -> authenticated home-page read -> Kill -> new browser process -> same Account/Profile -> authenticated action without credential injection |
+| Generic-runtime comparison | **Passed live across two different providers**: the generic Provisioning/Authentication/Profile/Session lifecycle was reused; provider-specific code remained in each adapter's normal form handling and success markers |
 | Real external account provisioning flow | **Passed through authenticated post-signup action**: Expand Testing signup -> account-created redirect -> login -> `/secure` -> safe page read |
 | Real process-restart session recovery | **Blocked by provider behavior**: Expand Testing uses process-bound session cookies; Account and Profile survive, but authenticated state is not restored without reauthentication |
 | Real public Demo CLI lifecycle | Passed: create -> discover/fill/submit/verify -> safe state -> Provider Session -> cleanup/Kill -> new session -> same Account/Profile -> authenticate again |
@@ -70,7 +74,7 @@ The repository documentation is in English and uses the product name: README, Sk
 
 ## Deliberately unavailable provider operations
 
-The repository does not claim to create or distribute consumer Google accounts, operate a shared account pool, import cookies, retrieve passwords or recovery codes, bypass MFA/CAPTCHA, or provide unrestricted cross-site login. The Google provider reports unavailable operations clearly. Provider-specific credentials are accepted only through internal adapter boundaries and raw values remain process-bound; a production deployment should replace that boundary with an approved external secret manager. The Core end-to-end test uses `TestProviderAdapter`, while the Browser Authentication test uses a narrowly scoped public Demo adapter and a real public-site CLI run. The real provisioning proof uses only the public Expand Testing practice environment and does not claim production-provider support.
+The repository does not claim to create or distribute consumer Google accounts, operate a shared account pool, import cookies, retrieve passwords or recovery codes, bypass MFA/CAPTCHA, or provide unrestricted cross-site login. The Google provider reports unavailable operations clearly. Provider-specific credentials are accepted only through internal adapter boundaries and raw values remain process-bound; a production deployment should replace that boundary with an approved external secret manager. The Core end-to-end test uses `TestProviderAdapter`, while the Browser Authentication tests use narrowly scoped public test-site adapters and live public-site CLI runs. The real provisioning proof uses only public practice environments and does not claim production-provider support.
 
 ## Known limitations
 
