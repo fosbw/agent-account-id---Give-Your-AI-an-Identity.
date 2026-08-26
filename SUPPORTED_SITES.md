@@ -14,7 +14,8 @@ The Agent calls the tool. The tool checks the Agent identity and capabilities, c
 
 ## The site list
 
-The current matrix contains **8 named service entries**. They are integration targets with explicit provider conditions. A named site is not automatically a working login adapter just because it has a Google sign-in button.
+The current matrix contains **11 named service entries**.
+ They are integration targets with explicit provider conditions. A named site is not automatically a working login adapter just because it has a Google sign-in button.
 
 | # | Service | Official path that may be used | Current status |
 |---:|---|---|---|
@@ -25,13 +26,20 @@ The current matrix contains **8 named service entries**. They are integration ta
 | 5 | GitLab | GitLab OAuth, OIDC, group SSO, or API | Conditional; depends on the instance or group configuration. |
 | 6 | Atlassian Cloud | OAuth, SAML/SSO, or an official API | Conditional; depends on organization identity settings. |
 | 7 | Linear | Linear OAuth integration or API | Conditional; requires an approved integration. |
-| 8 | GitHub | GitHub OAuth App, GitHub App, or Enterprise SSO | Conditional; GitHub is not advertised as a universal Google-login target. |
+| 8 | GitHub | GitHub OAuth App, GitHub App, or Enterprise SSO | **Implemented for authorized API actions** through `GitHubProviderAdapter`; browser login remains provider-specific. |
+| 9 | Public login demo (`the-internet.herokuapp.com`) | Site-published demo credentials through the scoped Browser Authentication Runtime | **Implemented as a public test integration only** through `DemoLoginAdapter`; not a production provider or universal login bridge. |
+| 10 | Expand Testing practice (`practice.expandtesting.com`) | Real browser signup and login in the public automation-testing environment | **Implemented as the first real browser provisioning test provider** through `ExpandTestingProvider`; creates an external test account, stores credentials behind the internal Vault boundary, verifies `/secure`, and records a process-bound session recovery limitation. |
+| 11 | AutomationExercise (`automationexercise.com`) | Real browser signup, login, authenticated home-page read, and same-profile/session recovery | **Implemented as the second real browser provisioning test provider** through `AutomationExerciseProvider`; uses normal multi-field signup controls and proves a new-process authenticated action without credential injection. |
 
-The number of services documented is **8**. The number of third-party websites with a fully automated login adapter in the current repository is **0**. The current repository provides the Account Runtime, browser lifecycle, provider capability model, policy layer, and integration contracts; it does not pretend that a provider-specific website login is already implemented when it is not.
+The number of services documented is **11**. The number of production third-party providers with a real implemented adapter in the current repository is **1: GitHub API authentication and read actions**. The repository includes **1 public test-site Browser Authentication adapter** and **2 real public test-site browser provisioning adapters**. GitHub is implemented through its official REST API and caller-owned OAuth/App token boundary; the Demo is intentionally limited to form discovery, login, verification, safe session metadata, and persistent-profile lifecycle testing; Expand Testing and AutomationExercise are intentionally limited to public test-account creation, login, authenticated-page verification, and provider-specific session behavior.
+
+The Universal Web Runtime is a cross-provider mechanics layer, not an additional site count. It supports safe session-bound navigation, page reading, clicking, ordinary field filling, selection, and submission wherever the explicit Browser Session allowlist permits the target. It does not infer provider login selectors, create arbitrary accounts, or turn a Google sign-in button into a universal credential bridge.
+
+The Agent Web Identity facade is the product surface above that mechanics layer. It presents one Agent's safe identity graph, accounts, profiles, sessions, permissions, activity, and memory references to an external planner while enforcing account/session ownership and keeping credentials outside Agent output.
 
 ## What counts as a supported login path
 
-A service is eligible for an adapter when it officially exposes OAuth, OpenID Connect, SSO, or an API that the Agent can use. The adapter must declare its scopes, lifecycle, verification behavior, revocation method, retention, and acceptable-use requirements.
+A service is eligible for an adapter when it officially exposes OAuth, OpenID Connect, SSO, or an API that the Agent can use. The adapter must declare its scopes, lifecycle, verification behavior, revocation method, retention, and acceptable-use requirements. The core capability contract uses `CREATE_ACCOUNT`, `INITIALIZE_ACCOUNT`, `AUTHENTICATE`, `PERSIST_SESSION`, `REFRESH_SESSION`, `REVOKE_SESSION`, `ROTATE_CREDENTIAL`, and `VERIFY_STATE`; each provider reports its own supported, unavailable, or provider-managed state for every operation.
 
 A site that only opens in Chrome is not automatically supported. A Google sign-in button alone does not create a universal credential or session bridge. If a service requires a provider-specific account, the matching provider adapter must be used.
 
@@ -67,7 +75,8 @@ You need Python 3.10 or newer, Git, a supported Agent or local command, a worksp
 
 For Google OAuth, you need an Installed-App OAuth Client and a Google identity that is already owned and authorized by the operator or organization. The current flow requests identity scopes only and does not create a Google account or request Gmail, Drive, recovery, payment, or administration access.
 
-For an external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
+For a production external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. The public Demo integration is a test-only exception with site-published credentials held inside the process-bound Vault. The Expand Testing integration is also test-only: the tool generates a provider-valid username and password, creates the external practice account through Chrome, then authenticates and reads the protected page. Its session cookies are process-bound and are not treated as persistent authentication after a complete process restart. The AutomationExercise integration is test-only: the tool generates a provider-valid signup identity, creates the account through Chrome, logs out, logs in through the generic Browser Authentication Runtime, reads the authenticated home page, and verifies recovery with the same Profile/session state in a new browser process.
+ Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
 
 ## The one-command workflow
 
@@ -85,6 +94,68 @@ User: Watches the activity and can Pause, Resume, Stop, Cancel, or Kill the run.
 Tool: At expiry, stops the task and temporary session data. The persistent Agent Account record is kept unless explicitly revoked.
 ```
 
+## GitHub Provider: the first real provider
+
+GitHub is the first real provider adapter in the project. It links an existing authorized GitHub App installation or caller-owned GitHub token, validates the provider session through the official API, and supports safe read actions such as the authenticated identity and installation repositories. It does not create a GitHub account, import a browser cookie, or pretend that an API token is a universal browser login.
+
+Configure the provider outside the repository:
+
+```bash
+export AGENT_ACCOUNT_GITHUB_INSTALLATION_ID=12345
+export AGENT_ACCOUNT_GITHUB_INSTALLATION_TOKEN='provided-by-your-approved-secret-manager'
+printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id github run \\
+  --agent-id github-agent \\
+  --display-name "GitHub Agent" \\
+  --agent-key-stdin \\
+  --ttl 3600 \\
+  --action get_authenticated_user
+```
+
+The command prints safe Account, Identity, Browser, and Provider Session metadata only. It never prints the GitHub token. The current CLI intentionally supports read-only provider actions; write actions require a separate explicit confirmation path.
+
+## Real browser account provisioning test
+
+```bash
+printf '%s' 'agent-key-from-agent-runtime' | agent-account-google-id browser provision \\
+  --runtime-dir ./expandtesting-runtime \\
+  --organization-id acme-test \\
+  --agent-id research-agent \\
+  --display-name "Research Agent Test" \\
+  --stable-agent-id live-acceptance-unique-id \\
+  --ttl 300 \\
+  --browser-session-name expandtesting-provision-session \\
+  --agent-key-stdin
+```
+
+This command creates an external account in the public practice environment through Chrome, stores the generated credential bundle behind the process-bound Vault, logs in with the account created by the command, verifies `/secure`, and returns safe metadata only. Account records and persistent profiles survive cleanup. The provider reports reauthentication required after process restart because its authentication cookie is process-bound.
+
+## Agent Web Identity and Universal Web Runtime
+
+The facade is intentionally planner-compatible: an external Claude Code, Codex, Gemini, or other planner supplies an action request, while this Tool enforces identity ownership, explicit permissions, the browser allowlist, safe output, and activity recording.
+
+```bash
+agent-account-google-id web-identity permissions \
+  --runtime-dir ./automationexercise-runtime \
+  <identity-id> \
+  --grant web.navigate \
+  --grant web.read \
+  --grant web.interact
+
+agent-account-google-id web-identity show \
+  --runtime-dir ./automationexercise-runtime \
+  <identity-id>
+
+agent-account-google-id web-identity action \
+  --runtime-dir ./automationexercise-runtime \
+  --identity-id <identity-id> \
+  --account-handle agent_account://automationexercise/<account-id> \
+  --session-id <browser-session-id> \
+  --browser-session-name agent-web-identity-session \
+  --operation read
+```
+
+The facade returns opaque identity/account/session handles and redacted web results only. It accepts separate `web.navigate`, `web.read`, and `web.interact` permissions. Passwords, cookies, tokens, raw Provider Session data, and screenshot OCR are not facade outputs. Known credential-entry and authentication states block screenshot capture; this conservative policy does not claim perfect pixel-level detection for arbitrary images.
+
 ## Current CLI examples
 
 ```bash
@@ -95,9 +166,14 @@ agent-account-google-id account create --agent-id research-agent --display-name 
 agent-account-google-id browser create --ttl 3600 --allow-domain example.com --persistent-profile --account-id <account-id>
 agent-account-google-id browser state <browser-session-id> --url https://example.com/ --page "Home" --action "Reading"
 agent-account-google-id browser verification <browser-session-id> example.com phone_required
+agent-account-google-id browser authenticate <browser-session-id> \\
+  --account-handle agent_account://demo-site/acct-demo \\
+  --target the-internet.herokuapp.com \\
+  --browser-session-name demo-auth-session \\
+  --install-demo-credentials
 ```
 
-The CLI exposes the lifecycle and control surfaces. It does not claim to provision a third-party consumer account when the provider has not exposed that operation.
+The CLI exposes the lifecycle and control surfaces. It does not claim to provision a third-party consumer account when the provider has not exposed that operation. The `browser provision --provider` selector currently supports only the two named public practice adapters and does not imply universal signup automation.
 
 ## Product boundary
 

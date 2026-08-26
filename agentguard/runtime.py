@@ -71,6 +71,16 @@ class AccountStore:
             raise FileNotFoundError(f"account record not found: {account_id}")
         return AgentAccount(**json.loads(path.read_text(encoding="utf-8")))
 
+    def find_by_handle(self, handle: str) -> AgentAccount:
+        for path in sorted(self.root.glob("*.json")):
+            try:
+                account = AgentAccount(**json.loads(path.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if account.handle == handle:
+                return account
+        raise FileNotFoundError(f"account record not found for handle: {handle}")
+
     def _path(self, account_id: str) -> Path:
         return self.root / f"{account_id}.json"
 

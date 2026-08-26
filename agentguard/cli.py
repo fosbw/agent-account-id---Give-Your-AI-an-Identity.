@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import asdict
@@ -9,10 +10,19 @@ from pathlib import Path
 
 from .accounts import AccountVault, GoogleProvider, LocalManagedAccountProvisioner
 from .browser import BrowserSessionManager
+from .browser_auth import AgentBrowserAutomation, BrowserAuthenticationRuntime, DemoCredentialProvider, DemoLoginAdapter, LoginRequest
+from .expandtesting_provider import ExpandTestingProvider
+from .automationexercise_provider import AutomationExerciseProvider
+from .provisioning import AccountProvisioningRuntime, ProvisioningRequest
 from .capabilities import CapabilityRegistry
 from .events import EventLog
 from .google_oauth import GoogleOAuthClient, GoogleOAuthConfig
+from .github_provider import GitHubProviderAdapter, GitHubProviderConfig
 from .identity import GoogleIdentityMetadataAdapter, IdentityStore, OperatorAttachedIdentityAdapter
+from .runtime import AccountRuntime, AgentIdentity
+from .agent_identity import AgentIdentityStore
+from .agent_web_identity import AgentWebIdentity
+from .web_runtime import UniversalWebRuntime, WebActionRequest
 from .policy import Policy
 from .redaction import Redactor
 from .supervisor import SessionPaths, Supervisor
@@ -103,12 +113,48 @@ def build_parser() -> argparse.ArgumentParser:
     account_revoke.add_argument("--account-dir", type=Path, default=None)
     account_revoke.add_argument("account_id")
     account_caps = account_sub.add_parser("capabilities", help="list provider capabilities")
-    account_caps.add_argument("--provider", choices=("google", "local"), default=None)
+    account_caps.add_argument("--provider", choices=("google", "github", "local"), default=None)
     account_sites = account_sub.add_parser("sites", help="list supported site capability records")
     account_sites.add_argument("--site-id", default=None)
     account_vault = account_sub.add_parser("vault-reference", help="store a non-secret opaque account handle reference")
     account_vault.add_argument("--account-dir", type=Path, default=None)
     account_vault.add_argument("handle")
+
+    github = sub.add_parser("github", help="run an authorized GitHub Provider action")
+    github_sub = github.add_subparsers(dest="github_action", required=True)
+    github_caps = github_sub.add_parser("capabilities", help="show GitHub Provider capability matrix")
+    github_caps.add_argument("--api-base", default=None)
+    github_run = github_sub.add_parser("run", help="run a read-only GitHub Provider action")
+    github_run.add_argument("--agent-id", required=True)
+    github_run.add_argument("--display-name", required=True)
+    github_run.add_argument("--agent-key-stdin", action="store_true", help="read Agent Key from stdin; never pass it as an argument")
+    github_run.add_argument("--installation-id", default=None)
+    github_run.add_argument("--token-env", default="AGENT_ACCOUNT_GITHUB_INSTALLATION_TOKEN")
+    github_run.add_argument("--account-dir", type=Path, default=None)
+    github_run.add_argument("--browser-dir", type=Path, default=None)
+    github_run.add_argument("--ttl", type=float, required=True)
+    github_run.add_argument("--action", choices=("get_authenticated_user", "list_installation_repositories"), default="get_authenticated_user")
+
+    web_identity = sub.add_parser("web-identity", help="use one Agent's safe web identity facade")
+    web_identity_sub = web_identity.add_subparsers(dest="web_identity_action", required=True)
+    web_identity_show = web_identity_sub.add_parser("show", help="show safe Agent Web Identity metadata")
+    web_identity_show.add_argument("--runtime-dir", type=Path, required=True)
+    web_identity_show.add_argument("identity_id")
+    web_identity_permissions = web_identity_sub.add_parser("permissions", help="set explicit safe web permissions for an Agent identity")
+    web_identity_permissions.add_argument("--runtime-dir", type=Path, required=True)
+    web_identity_permissions.add_argument("identity_id")
+    web_identity_permissions.add_argument("--grant", action="append", required=True, dest="permissions")
+    web_identity_exec = web_identity_sub.add_parser("action", help="execute one planner-supplied safe web action")
+    web_identity_exec.add_argument("--runtime-dir", type=Path, required=True)
+    web_identity_exec.add_argument("--browser-dir", type=Path, default=None)
+    web_identity_exec.add_argument("--identity-id", required=True)
+    web_identity_exec.add_argument("--account-handle", required=True)
+    web_identity_exec.add_argument("--session-id", required=True)
+    web_identity_exec.add_argument("--browser-session-name", required=True)
+    web_identity_exec.add_argument("--operation", choices=("navigate", "read", "click", "fill", "select", "submit"), required=True)
+    web_identity_exec.add_argument("--url", default=None)
+    web_identity_exec.add_argument("--selector", default=None)
+    web_identity_exec.add_argument("--value", default=None)
 
     browser = sub.add_parser("browser", help="manage an isolated, operator-authorized browser session")
     browser_sub = browser.add_subparsers(dest="browser_action", required=True)
@@ -160,6 +206,29 @@ def build_parser() -> argparse.ArgumentParser:
     browser_state.add_argument("--url", required=True)
     browser_state.add_argument("--page", default=None)
     browser_state.add_argument("--action", dest="browser_action_label", default="observed")
+
+    browser_provision = browser_sub.add_parser("provision", help="create and authenticate a real public test account in an isolated browser")
+    browser_provision.add_argument("--runtime-dir", type=Path, default=None)
+    browser_provision.add_argument("--browser-dir", type=Path, default=None)
+    browser_provision.add_argument("--vault-dir", type=Path, default=None)
+    browser_provision.add_argument("--organization-id", required=True)
+    browser_provision.add_argument("--agent-id", required=True)
+    browser_provision.add_argument("--display-name", required=True)
+    browser_provision.add_argument("--stable-agent-id", default=None)
+    browser_provision.add_argument("--provider", choices=("expandtesting", "automationexercise"), default="expandtesting")
+    browser_provision.add_argument("--ttl", type=float, required=True)
+    browser_provision.add_argument("--browser-session-name", required=True)
+    browser_provision.add_argument("--agent-key-stdin", action="store_true", help="read Agent Key from stdin; never pass it as an argument")
+
+    browser_auth = browser_sub.add_parser("authenticate", help="authenticate an Agent Account inside an isolated browser session")
+    browser_auth.add_argument("--browser-dir", type=Path, default=None)
+    browser_auth.add_argument("--vault-dir", type=Path, default=None)
+    browser_auth.add_argument("session_id")
+    browser_auth.add_argument("--account-handle", required=True)
+    browser_auth.add_argument("--target", choices=("the-internet.herokuapp.com",), required=True)
+    browser_auth.add_argument("--login-url", default="https://the-internet.herokuapp.com/login")
+    browser_auth.add_argument("--browser-session-name", required=True)
+    browser_auth.add_argument("--install-demo-credentials", action="store_true", help="install the site's public Demo credentials into the internal test vault")
 
     browser_verification = browser_sub.add_parser("verification", help="record a real provider verification state")
     browser_verification.add_argument("--browser-dir", type=Path, default=None)
@@ -372,10 +441,15 @@ def cmd_account(args) -> int:
         print(json.dumps([row.safe_metadata() for row in rows], ensure_ascii=False, indent=2))
         return 0
     if args.account_action == "capabilities":
-        providers = [args.provider] if args.provider else ["google", "local"]
+        providers = [args.provider] if args.provider else ["google", "github", "local"]
         rows = []
         for provider in providers:
-            descriptor = GoogleProvider().capabilities() if provider == "google" else LocalManagedAccountProvisioner(Path.home() / ".agentguard" / "accounts").capabilities()
+            if provider == "google":
+                descriptor = GoogleProvider().capabilities()
+            elif provider == "github":
+                descriptor = GitHubProviderAdapter(GitHubProviderConfig.from_environment()).capabilities()
+            else:
+                descriptor = LocalManagedAccountProvisioner(Path.home() / ".agentguard" / "accounts").capabilities()
             rows.append(descriptor.safe_metadata())
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
@@ -423,6 +497,86 @@ def cmd_identity(args) -> int:
     raise SystemExit("unknown identity action")
 
 
+def cmd_github(args) -> int:
+    if args.github_action == "capabilities":
+        config = GitHubProviderConfig(api_base=args.api_base or "https://api.github.com")
+        print(json.dumps({"provider": "github", "config": config.safe_metadata(), "capabilities": GitHubProviderAdapter(config).capabilities().safe_metadata()}, indent=2))
+        return 0
+    if args.github_action != "run":
+        raise SystemExit("unknown github action")
+    if not args.agent_key_stdin:
+        raise SystemExit("github run requires --agent-key-stdin so the Agent Key is not placed in shell history")
+    agent_key = sys.stdin.read().strip()
+    if not agent_key:
+        raise SystemExit("Agent Key stdin was empty")
+    token = os.environ.get(args.token_env)
+    if not token:
+        raise SystemExit(f"GitHub token is not configured in {args.token_env}")
+    config = GitHubProviderConfig(
+        api_base="https://api.github.com",
+        installation_id=args.installation_id or os.environ.get("AGENT_ACCOUNT_GITHUB_INSTALLATION_ID"),
+        token=token,
+    )
+    adapter = GitHubProviderAdapter(config)
+    runtime = AccountRuntime(
+        args.account_dir or Path.home() / ".agent-account-google-id" / "github-runtime",
+        adapter=adapter,
+        browser=BrowserSessionManager(args.browser_dir),
+    )
+    path = runtime.start(
+        agent_key=agent_key,
+        agent_id=args.agent_id,
+        display_name=args.display_name,
+        ttl=args.ttl,
+        allowed_domains=("github.com",),
+        action=args.action,
+    )
+    print(json.dumps(path.safe_metadata(), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_web_identity(args) -> int:
+    root = args.runtime_dir.expanduser().resolve()
+    identities = AgentIdentityStore(root / "agent-identities")
+    aggregate = identities.get(args.identity_id)
+    identity = AgentIdentity(
+        identity_id=aggregate.identity_id,
+        agent_id=aggregate.agent_id,
+        provider=aggregate.provider,
+        key_fingerprint=aggregate.key_fingerprint,
+        created_at=aggregate.created_at,
+    )
+    if args.web_identity_action in {"show", "permissions"}:
+        manager = BrowserSessionManager(root / "browser-sessions")
+        facade = AgentWebIdentity.from_runtime(
+            identity,
+            root,
+            manager,
+            UniversalWebRuntime(manager, AgentBrowserAutomation("metadata-only")),
+        )
+        if args.web_identity_action == "permissions":
+            print(json.dumps(facade.set_permissions(args.permissions), ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(facade.metadata(), ensure_ascii=False, indent=2))
+        return 0
+    if args.web_identity_action == "action":
+        manager = BrowserSessionManager(args.browser_dir or root / "browser-sessions")
+        browser = AgentBrowserAutomation(args.browser_session_name)
+        try:
+            facade = AgentWebIdentity.from_runtime(
+                identity,
+                root,
+                manager,
+                UniversalWebRuntime(manager, browser),
+            )
+            request = WebActionRequest(args.operation, url=args.url, selector=args.selector, value=args.value)
+            print(json.dumps(facade.execute(args.account_handle, args.session_id, request), ensure_ascii=False, indent=2))
+            return 0
+        finally:
+            browser.close()
+    raise SystemExit("unknown web-identity action")
+
+
 def cmd_browser_watch(args) -> int:
     manager = browser_from(args)
     manifest = manager.get(args.session_id)
@@ -454,6 +608,61 @@ def cmd_browser_watch(args) -> int:
         except FileNotFoundError:
             return 0
         time.sleep(0.25)
+
+
+def cmd_browser_provision(args) -> int:
+    if not args.agent_key_stdin:
+        raise SystemExit("browser provision requires --agent-key-stdin")
+    agent_key = sys.stdin.read().strip()
+    if not agent_key:
+        raise SystemExit("Agent Key stdin was empty")
+    runtime_dir = args.runtime_dir or Path.home() / ".agent-account-google-id" / "expandtesting-runtime"
+    manager = BrowserSessionManager(args.browser_dir or runtime_dir / "browser-sessions")
+    vault = AccountVault(args.vault_dir or runtime_dir / "credential-vault")
+    provider = ExpandTestingProvider() if args.provider == "expandtesting" else AutomationExerciseProvider()
+    request = ProvisioningRequest(
+        organization_id=args.organization_id,
+        agent_id=args.agent_id,
+        provider=args.provider,
+        display_name=args.display_name,
+        stable_agent_id=args.stable_agent_id,
+    )
+    runtime = AccountProvisioningRuntime(runtime_dir, provider, browser=manager, vault=vault)
+    path = runtime.provision(
+        agent_key,
+        request,
+        args.ttl,
+        args.browser_session_name,
+        lambda name: AgentBrowserAutomation(name),
+    )
+    print(json.dumps(path.safe_metadata(), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_browser_authenticate(args) -> int:
+    manager = browser_from(args)
+    manifest = manager.get(args.session_id)
+    if manifest.account_id is None:
+        raise SystemExit("browser authentication requires an Agent Account-bound session")
+    vault = AccountVault(args.vault_dir or manager.root / "vault")
+    if args.install_demo_credentials:
+        DemoCredentialProvider.install(args.account_handle, vault)
+    browser = AgentBrowserAutomation(args.browser_session_name)
+    request = LoginRequest(
+        account_handle=args.account_handle,
+        target=args.target,
+        login_url=args.login_url,
+        session_id=args.session_id,
+        profile_dir=Path(manifest.profile_dir),
+    )
+    try:
+        state = BrowserAuthenticationRuntime(manager, vault).login(request, DemoLoginAdapter(), browser)
+        print(json.dumps(state.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    finally:
+        # Closing the daemon keeps the persistent profile on disk while
+        # preventing a stale Chromium profile lock after this CLI invocation.
+        browser.close()
 
 
 def cmd_browser(args) -> int:
@@ -489,6 +698,10 @@ def cmd_browser(args) -> int:
         manager.mark_manual_login_complete(args.session_id, args.domain)
         print(json.dumps({"ok": True, "event": "browser.login_manual_signal", "domain": args.domain, "verified": False}))
         return 0
+    if args.browser_action == "provision":
+        return cmd_browser_provision(args)
+    if args.browser_action == "authenticate":
+        return cmd_browser_authenticate(args)
     if args.browser_action == "state":
         decision = manager.record_browser_state(args.session_id, args.url, args.page, args.browser_action_label)
         print(json.dumps(asdict(decision), ensure_ascii=False, indent=2))
@@ -523,6 +736,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_identity(args)
     if args.action == "account":
         return cmd_account(args)
+    if args.action == "github":
+        return cmd_github(args)
+    if args.action == "web-identity":
+        return cmd_web_identity(args)
     if args.action == "google-auth":
         return cmd_google_auth(args)
     if args.action == "browser":

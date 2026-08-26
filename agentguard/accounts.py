@@ -49,6 +49,19 @@ class ProviderCapabilities:
     recovery: str
     credential_rotation: str
     revocation: str
+    authentication: str = "provider_adapter"
+
+    def capability_matrix(self) -> dict[str, str]:
+        return {
+            "CREATE_ACCOUNT": self.account_creation,
+            "INITIALIZE_ACCOUNT": self.identity_initialization,
+            "AUTHENTICATE": self.authentication,
+            "PERSIST_SESSION": self.persistent_session,
+            "REFRESH_SESSION": self.recovery,
+            "REVOKE_SESSION": self.revocation,
+            "ROTATE_CREDENTIAL": self.credential_rotation,
+            "VERIFY_STATE": self.verification,
+        }
 
     def safe_metadata(self) -> dict[str, str]:
         return asdict(self)
@@ -69,6 +82,7 @@ class AgentAccount:
     verification_state: str = "not_started"
     session_state: str = "not_started"
     authorization_basis: str = "provider_authorized"
+    external_account_ref: str | None = None
 
     def safe_metadata(self) -> dict:
         return asdict(self)
@@ -164,6 +178,26 @@ class AccountVault:
             raise TypeError("consumer must be callable")
         return consumer(self._secrets[reference_id])
 
+    def list_references(self) -> list[dict]:
+        rows = []
+        for path in sorted(self.root.glob("*.json")):
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
+        return rows
+
+    def find_active_secret_reference(self, handle: str, name: str) -> str:
+        """Return a matching secret reference that is loaded in this process."""
+        validate_account_handle(handle)
+        for row in self.list_references():
+            reference_id = str(row.get("reference_id") or "")
+            if row.get("handle") == handle and row.get("name") == name and reference_id in self._secrets:
+                return reference_id
+        raise FileNotFoundError(f"active secret reference is not available for {handle} and {name}")
+
     def get_reference(self, reference_id: str) -> dict:
         if not reference_id or "/" in reference_id or "\\" in reference_id:
             raise ValueError("invalid vault reference id")
@@ -212,6 +246,7 @@ class GoogleProvider:
         return ProviderCapabilities(
             provider=self.provider,
             account_creation="unavailable",
+            authentication="supported_via_oauth",
             identity_initialization="supported_via_oauth",
             credential_initialization="provider_managed_only",
             browser_session="supported_with_external_runtime",
@@ -287,6 +322,7 @@ class LocalManagedAccountProvisioner:
         return ProviderCapabilities(
             provider=self.provider,
             account_creation="supported_local_only",
+            authentication="supported_local_only",
             identity_initialization="supported_reference_only",
             credential_initialization="not_accepted",
             browser_session="supported",

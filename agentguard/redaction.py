@@ -10,8 +10,12 @@ _PATTERNS = [
     (re.compile(r"(?i)(xox[baprs]-[a-z0-9-]{15,})"), "[REDACTED_SLACK_TOKEN]"),
     (re.compile(r"-----BEGIN (?:RSA|EC|OPENSSH|PRIVATE) KEY-----[\s\S]*?-----END (?:RSA|EC|OPENSSH|PRIVATE) KEY-----"), "[REDACTED_PRIVATE_KEY]"),
     (re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s]+"), r"\1[REDACTED_BEARER]"),
+    (re.compile(r"(?i)(\bbearer\s+)[^\s,'\"]+"), r"\1[REDACTED_BEARER]"),
     (re.compile(r"(?i)(api[_-]?key\s*[=:]\s*)['\"]?[^\s,'\"]+"), r"\1[REDACTED_API_KEY]"),
     (re.compile(r"(?i)(password\s*[=:]\s*)['\"]?[^\s,'\"]+"), r"\1[REDACTED_PASSWORD]"),
+    (re.compile(r"(?i)(token\s*[=:]\s*)['\"]?[^\s,'\"]+"), r"\1[REDACTED_TOKEN]"),
+    (re.compile(r"(?i)(secret\s*[=:]\s*)['\"]?[^\s,'\"]+"), r"\1[REDACTED_SECRET]"),
+    (re.compile(r"(?i)(cookies?\s*[=:]\s*)['\"]?[^\s,'\"]+"), r"\1[REDACTED_COOKIE]"),
 ]
 
 
@@ -32,5 +36,12 @@ class Redactor:
         if isinstance(value, list):
             return [self.redact_object(item) for item in value]
         if isinstance(value, dict):
-            return {key: self.redact_object(item) for key, item in value.items()}
+            safe = {}
+            for key, item in value.items():
+                normalized = str(key).casefold()
+                if any(word in normalized for word in ("password", "passwd", "cookie", "token", "secret", "private_key", "recovery_code")):
+                    safe[key] = "[REDACTED_FIELD]"
+                else:
+                    safe[key] = self.redact_object(item)
+            return safe
         return value

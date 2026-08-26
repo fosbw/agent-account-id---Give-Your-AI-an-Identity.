@@ -63,6 +63,22 @@ def test_google_provider_reports_unavailable_account_creation():
         provider.create_account("agent-1", "Research Agent")
 
 
+def test_provider_capability_matrix_uses_core_operation_names():
+    matrix = GoogleProvider().capabilities().capability_matrix()
+    assert set(matrix) == {
+        "CREATE_ACCOUNT",
+        "INITIALIZE_ACCOUNT",
+        "AUTHENTICATE",
+        "PERSIST_SESSION",
+        "REFRESH_SESSION",
+        "REVOKE_SESSION",
+        "ROTATE_CREDENTIAL",
+        "VERIFY_STATE",
+    }
+    assert matrix["CREATE_ACCOUNT"] == "unavailable"
+    assert matrix["AUTHENTICATE"] == "supported_via_oauth"
+
+
 def test_site_capabilities_do_not_allow_wildcard():
     registry = CapabilityRegistry()
     assert registry.check("youtube", "web.read") is False if "youtube" in {x.site_id for x in registry.list_sites()} else True
