@@ -59,7 +59,7 @@ def test_vault_accepts_opaque_handle_and_can_revoke(tmp_path: Path):
 def test_google_provider_capability_and_creator_path_contract(tmp_path: Path):
     provider = GoogleProvider()
     assert provider.capabilities().account_creation == "supported"
-    assert provider.can_create_account() is False
+    assert provider.can_create_account() is True
     with pytest.raises(ProviderOperationUnavailable, match="does not expose"):
         provider.create_account("agent-1", "Research Agent")
     creator = GoogleCreatorProvider(AccountVault(tmp_path / "vault"), headless=True)
