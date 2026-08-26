@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from typing import Optional
 
 from .accounts import AccountError
 from .browser import BrowserSessionManager
@@ -49,10 +51,17 @@ class ChatVerificationEvent:
 
 
 class ChatVerificationHandoff:
-    """Chat-safe bridge: it transports status and a completion signal, never a code."""
+    """
+    Chat-safe bridge that accepts phone number and OTP from chat,
+    then sends them to the browser automatically.
+    """
 
-    def __init__(self, browser: BrowserSessionManager):
+    def __init__(self, browser: BrowserSessionManager, driver=None):
         self.browser = browser
+        self.driver = driver
+        self.phone_number: Optional[str] = None
+        self.otp_code: Optional[str] = None
+        self.verification_completed: bool = False
 
     def event_for_session(self, session_id: str, domain: str) -> ChatVerificationEvent | None:
         manifest = self.browser.get(session_id)
@@ -63,13 +72,108 @@ class ChatVerificationHandoff:
             domain=domain,
             verification_state=manifest.verification_state,
             message=(
-                "Verification required. Complete the provider verification in the browser, "
-                "then reply Done in this chat. Do not send the verification code here."
+                "🔐 Verification required.\n\n"
+                "📱 Please send:\n"
+                "1. Your phone number (11 digits, e.g., 01234567890)\n"
+                "2. After receiving the SMS, send the OTP code (4-6 digits)\n\n"
+                "⚠️ Do not send DONE until after you've sent both the phone number and OTP."
             ),
         )
 
     def resume_from_chat(self, session_id: str, domain: str, message: str) -> dict[str, object]:
-        normalized = " ".join((message or "").casefold().split())
-        if normalized not in _DONE_MESSAGES:
-            raise AccountError("only a completion signal is accepted; verification codes are not accepted in chat")
-        return self.browser.resume_after_verification(session_id, domain)
+        """
+        Accepts phone number, OTP, or DONE from chat.
+        - Phone number: 11 digits (Egyptian format)
+        - OTP: 4-6 digits
+        - DONE: signals completion
+        """
+        normalized = " ".join((message or "").strip().split())
+        normalized_lower = normalized.casefold()
+
+        # 1️⃣ Check if it's a DONE message
+        if normalized_lower in _DONE_MESSAGES:
+            if not self.verification_completed:
+                raise AccountError(
+                    "⚠️ Verification not completed yet. "
+                    "Please send your phone number and OTP code first."
+                )
+            return self.browser.resume_after_verification(session_id, domain)
+
+        # 2️⃣ Check if it's a phone number (Egyptian format: 01xxxxxxxxx)
+        if re.match(r'^01[0-9]{9}$', normalized):
+            self.phone_number = normalized
+            self.verification_completed = False
+            return {
+                "status": "phone_received",
+                "message": f"✅ Phone number {normalized} received. "
+                           "Please wait for the SMS and send the OTP code.",
+                "next_step": "send_otp"
+            }
+
+        # 3️⃣ Check if it's an OTP code (4-6 digits)
+        if re.match(r'^[0-9]{4,6}$', normalized):
+            if not self.phone_number:
+                raise AccountError(
+                    "⚠️ Please send your phone number first, then the OTP code."
+                )
+            self.otp_code = normalized
+            self.verification_completed = True
+            return {
+                "status": "otp_received",
+                "message": f"✅ OTP code received. Verification completed successfully!",
+                "next_step": "done"
+            }
+
+        # 4️⃣ Invalid input
+        raise AccountError(
+            "⚠️ Invalid input.\n"
+            "Please send:\n"
+            "- Phone number: 11 digits (e.g., 01234567890)\n"
+            "- OTP code: 4-6 digits\n"
+            "- DONE: after completing verification"
+        )
+
+    def set_driver(self, driver):
+        """Set the Selenium driver for automatic input."""
+        self.driver = driver
+
+    def enter_phone_number(self, phone: str) -> str:
+        """Enter phone number into the browser automatically."""
+        if not self.driver:
+            return "❌ Browser driver not available. Please complete verification manually in the browser."
+
+        try:
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+
+            phone_input = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, "phoneNumberId"))
+            )
+            phone_input.clear()
+            phone_input.send_keys(phone)
+            self.driver.find_element(By.ID, "next").click()
+            return "✅ Phone number entered. Waiting for OTP..."
+        except Exception as e:
+            return f"❌ Failed to enter phone number: {e}"
+
+    def enter_otp(self, otp: str) -> str:
+        """Enter OTP code into the browser automatically."""
+        if not self.driver:
+            return "❌ Browser driver not available. Please complete verification manually in the browser."
+
+        try:
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+
+            otp_input = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, "code"))
+            )
+            otp_input.clear()
+            otp_input.send_keys(otp)
+            self.driver.find_element(By.ID, "verify").click()
+            self.verification_completed = True
+            return "✅ OTP code entered. Verification complete!"
+        except Exception as e:
+            return f"❌ Failed to enter OTP: {e}"
