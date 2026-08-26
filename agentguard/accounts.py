@@ -264,7 +264,7 @@ class GoogleProvider:
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             provider=self.provider,
-            account_creation="unavailable",
+            account_creation="supported",
             authentication="supported_via_oauth",
             identity_initialization="supported_via_oauth",
             credential_initialization="provider_managed_only",
