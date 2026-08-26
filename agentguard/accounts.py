@@ -232,15 +232,28 @@ def _safe_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
     return clean
 
 
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider=self.provider,
+            account_creation="supported_local_only",
+            authentication="supported_local_only",
+            identity_initialization="supported_reference_only",
+            credential_initialization="not_accepted",
+            browser_session="supported",
+            persistent_session="supported",
+            verification="manual_or_provider_signal",
+            recovery="reference_only",
+            credential_rotation="not_accepted",
+            revocation="supported_local_record",
+        )
 class GoogleProvider:
-    """Google capability descriptor for officially exposed operations.
-
-    Google identity OAuth can authorize identity metadata. This provider does
-    not claim a public account-provisioning API and therefore reports account
-    creation as unavailable instead of asking for a user's personal account.
-    """
-
     provider = "google"
+
+    def __init__(self, vault: AccountVault | None = None):
+        self.vault = vault or AccountVault(Path("./vault"))
+        self.root = Path("./google_accounts")
+        self.root.mkdir(parents=True, exist_ok=True)
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
@@ -269,6 +282,7 @@ class GoogleProvider:
         account.identity_id = identity_id
         account.state = "identity_initialized"
         account.updated_at = time.time()
+        self._write(account)
         return account
 
     def initialize_credentials(self, account: AgentAccount) -> str:
@@ -280,18 +294,21 @@ class GoogleProvider:
         account.session_state = "initialized"
         account.state = "browser_initialized"
         account.updated_at = time.time()
+        self._write(account)
         return account
 
     def verify_state(self, account: AgentAccount) -> AgentAccount:
         account.verification_state = "provider_state_required"
         account.state = "verification_required"
         account.updated_at = time.time()
+        self._write(account)
         return account
 
     def recover_session(self, account: AgentAccount) -> AgentAccount:
         account.session_state = "reauthentication_required"
         account.state = "reauthentication_required"
         account.updated_at = time.time()
+        self._write(account)
         return account
 
     def rotate_credentials(self, account: AgentAccount) -> str:
@@ -301,38 +318,21 @@ class GoogleProvider:
         account.state = "revocation_requested"
         account.session_state = "revoked"
         account.updated_at = time.time()
+        self._write(account)
         return account
 
+    def get(self, account_id: str) -> AgentAccount:
+        if not account_id or "/" in account_id or "\\" in account_id:
+            raise ValueError("invalid account id")
+        path = self.root / f"{account_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(f"account not found: {account_id}")
+        return AgentAccount(**json.loads(path.read_text(encoding="utf-8")))
 
-class LocalManagedAccountProvisioner:
-    """A real local Account Runtime for development and provider adapters.
-
-    It creates persistent local account records and browser profiles, but it
-    never pretends that a local record is a third-party Google account.
-    """
-
-    provider = "local"
-
-    def __init__(self, root: Path, vault: AccountVault | None = None):
-        self.root = root.expanduser().resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.vault = vault or AccountVault(self.root / "vault")
-
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(
-            provider=self.provider,
-            account_creation="supported_local_only",
-            authentication="supported_local_only",
-            identity_initialization="supported_reference_only",
-            credential_initialization="not_accepted",
-            browser_session="supported",
-            persistent_session="supported",
-            verification="manual_or_provider_signal",
-            recovery="reference_only",
-            credential_rotation="not_accepted",
-            revocation="supported_local_record",
+    def _write(self, account: AgentAccount) -> None:
+        (self.root / f"{account.account_id}.json").write_text(
+            json.dumps(account.safe_metadata(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-
     def can_create_account(self) -> bool:
         return True
 
