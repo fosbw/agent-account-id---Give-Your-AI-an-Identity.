@@ -16,6 +16,16 @@ The Agent calls this tool. The tool checks the Agent identity, checks the reques
 
 A task can use a real browser and real Internet only inside an environment owned and configured by the operator. A provider must officially expose the identity or account operation before an adapter can perform it. The tool never turns a user account into an Agent account by default.
 
+## See the tool as a user
+
+This is the shape of the product when an Agent starts working: identity, account, Vault, browser profile, session, safe action, restart, and continuation are shown as one direct flow.
+
+> **This preview is a local demo with a simulated provider.** It does not show a real Google signup, real credentials, or a real external account.
+
+![Agent Account Google ID product preview](assets/demo/agent-account-preview.png)
+
+[Watch the local simulated demo](assets/demo/agent-account-demo.mp4)
+
 ## What is in main
 
 | Capability | Current behavior |
