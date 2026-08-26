@@ -1,103 +1,106 @@
-# Agent Account Google ID — المواقع ومكان التشغيل والمتطلبات
+# Agent Account Google ID — Supported Sites, Agents, and Requirements
 
-## بص، الأداة دي بتشتغل فين؟
+## What this tool is for
 
-الأداة دي مش موقع ولا تطبيق لوحده. هي Tool/Skill بتتحط جنب الـ Agent اللي أنت بتستخدمه. أنت بتجيب Claude Code أو Codex أو أي Agent عنده طريقة يستدعي Tools، وبعدها تقول له المهمة والمدة. الأداة تمسك الجلسة والمتصفح والوقت والمراقبة والإيقاف.
+This is a Tool/Skill for an Agent that the user already owns, such as Claude Code or Codex. The user brings the Agent, model access, API key, workspace, and runtime. **Agent Account Google ID — Give Your AI an Identity** adds the Agent Account record, identity reference, browser profile, persistent session, time limit, live state, controls, policies, and cleanup.
 
-اسم المنتج الظاهر للمستخدم هو:
-
-> **Agent Account Google ID — Give Your AI an Identity**
-
-اسم الأمر القديم `agentguard` موجود فقط عشان التوافق مع النسخة الأولى. وسيتم توفير alias باسم المنتج للناس التي تريد استدعاء الأداة باسمها الكامل.
-
-## المواقع ومسارات الدخول
-
-المهم تفهم النقطة دي: مش كل موقع عنده زر Google يبقى الأداة تقدر تدخله تلقائيًا بنفس الطريقة. الموقع لازم يكون عنده مسار رسمي يقبل Google OAuth أو OIDC أو SSO أو API. القائمة التالية بتوضح أقرب أماكن للاستخدام، والفرق بين الدعم المباشر والدعم المشروط.
-
-| الموقع أو الخدمة | المسار الممكن | الحالة في المشروع |
-|---|---|---|
-| Google Workspace وGoogle Cloud | Google OAuth أو Service Account أو Workspace SSO | هوية Google metadata وOAuth identity flow موجودان؛ صلاحيات Gmail وDrive والإدارة غير مفعلة. |
-| Microsoft Entra External ID أو تطبيق مؤسسة يستخدم Microsoft SSO | Google Federation/OIDC إذا كانت المؤسسة مفعّلتها | ممكن فقط بعد إعداد Federation من مالك المؤسسة؛ ليس دخولًا عامًا لكل حسابات Microsoft. |
-| Notion | OAuth integration أو API رسمي | مناسب كـ Adapter API بعد تسجيل Integration وتحديد الصلاحيات؛ زر Google وحده لا يكفي. |
-| Slack | OAuth app أو SSO للمؤسسة | مناسب بعد إنشاء App أو إعداد SSO من مالك Workspace؛ لا يوجد دخول عام بحساب Google لكل Workspace. |
-| GitLab | OAuth أو Group SSO أو API | مناسب عندما يفعّل المالك Google/OIDC أو يستخدم OAuth/API رسمي. |
-| Atlassian Cloud | Google login أو SAML/SSO أو API OAuth | مشروط بإعداد المؤسسة ونوع الحساب والصلاحيات. |
-| Linear | OAuth integration أو API | مناسب لتشغيل Agent بصلاحيات محددة؛ لا يعتمد على تخمين كلمة مرور أو Cookie. |
-| GitHub | GitHub App أو OAuth أو Enterprise SSO | مناسب بتكامل GitHub رسمي؛ GitHub ليس موقعًا نعلن أنه يقبل حساب Google مباشرة في كل الحالات. |
-| أي SaaS آخر | OAuth/OIDC/API موثق من المزود | يضاف له Adapter مستقل بعد مراجعة طريقة الدخول والصلاحيات. |
-
-## المواقع التي لا نقول إنها مدعومة تلقائيًا
-
-الموقع الذي لا يقدم OAuth أو OIDC أو SSO أو API رسمي لا نعتبره مدعومًا لمجرد أنه يفتح في Chrome. كذلك لا نعتبر الحسابات التي تحتاج CAPTCHA أو MFA غير قابل للبرمجة دليلًا على أن الأداة تستطيع تجاوزها. الأداة لا تستخرج Password أو Cookie ولا تنقل Session من شخص إلى شخص.
-
-لو قلت للـ Agent: «ادخل Microsoft»، لازم يكون المقصود خدمة Microsoft محددة ومهيأة بطريقة تسمح بهوية Google أو بهوية Microsoft/Entra مصرح بها. Microsoft 365 العادي لا يتحول تلقائيًا إلى Google login لمجرد أن عندك حساب Google.
-
-## الـ Agents التي تشتغل معها الأداة
-
-| Agent أو بيئة | الوضع | طريقة الاستخدام |
-|---|---|---|
-| Claude Code | تكامل منفذ | Claude Hook يستدعي الأداة ويسجل الأحداث ويخضع الجلسة للسياسة. |
-| Codex CLI | تكامل منفذ | Wrapper يشغل Codex داخل Supervisor مع TTL والهوية والمتصفح. |
-| Gemini CLI | تشغيل عام ممكن، Adapter متخصص لاحق | يمكن تشغيل أي أمر محلي عبر Supervisor؛ تعليمات Gemini المتخصصة ليست Adapter مكتملًا داخل المشروع. |
-| GitHub Copilot CLI | تشغيل عام ممكن، Adapter متخصص لاحق | يحتاج إعداد Hooks أو MCP من جهة Copilot؛ ليس تكاملًا مكتملًا حاليًا. |
-| MCP-compatible Agent | واجهة مناسبة | يمكن إضافة MCP server عندما نحدد عقد التشغيل والصلاحيات للمزود. |
-| أي Agent يشغل command محلي | ممكن على مستوى Supervisor | يشغل الأمر تحت TTL، لكن ربط الهوية والمتصفح يحتاج دعمًا صريحًا من البيئة. |
-
-## أماكن تشغيل الأداة
-
-الأداة حاليًا **local-first**. يعني الكود يشتغل على البيئة التي أنت مثبت فيها المشروع والـ Agent.
-
-| المكان | الدعم الحالي |
-|---|---|
-| Linux | مناسب للتشغيل الكامل؛ يدعم process groups وpause/resume وChromium إذا كان مثبتًا. |
-| macOS | مناسب غالبًا لمسار الجلسة والمتصفح؛ بعض تفاصيل process control تعتمد على البيئة. |
-| WSL | مناسب لتشغيل Python والـ Agent؛ يجب أن يكون Chromium والـ Agent في نفس البيئة أو أن تحدد مسارهما. |
-| Windows native | تشغيل Supervisor ممكن، لكن Pause/Resume وإدارة process groups ليست بنفس ضمانات POSIX الحالية. |
-| Docker أو VM | مناسب للعزل الأقوى إذا جهز المستخدم Chromium والـ Agent والشبكة. |
-| CI/CD | مناسب لاختبارات CLI غير التفاعلية؛ لا نعتبره مكانًا مناسبًا لهوية متصفح حقيقية بدون إعداد Secret Manager وBrowser Runtime مصرح. |
-| Cloud browser أو بث عن بُعد | ليس مستضافًا في المشروع الحالي؛ يحتاج بيئة نشر مستقلة ومصادقة للبث. |
-| هاتف المستخدم | لا يوجد ربط مباشر حاليًا بين الهاتف والـ Sandbox؛ يحتاج Browser Runtime أو خدمة Remote Desktop مخصصة. |
-
-## متطلبات التشغيل
-
-بص، عشان تشغل النسخة الحالية تحتاج Python 3.10 أو أحدث، وGit، والـ Agent الذي تريد تشغيله مثل Claude Code أو Codex، ومساحة عمل واضحة، وChromium أو متصفح Chromium-compatible إذا كنت ستستخدم مسار المتصفح، وقائمة domains مسموحة.
-
-لو ستستخدم Google OAuth الرسمي، تحتاج Installed-App OAuth Client من Google Cloud، وهوية يملكها المستخدم أو المؤسسة، ونطاقات الهوية الأساسية فقط. الأمر الحالي لا ينشئ حساب Google، ولا يطلب Gmail أو Drive أو Admin scopes، ولا يحفظ Access Token أو Refresh Token.
-
-لو ستستخدم موقعًا خارجيًا، تحتاج أن يكون الموقع داعمًا لمسار OAuth/OIDC/SSO/API رسمي، وأن يكون التكامل مضافًا إلى allowlist، وأن تكون الصلاحيات معروفة وقابلة للإلغاء. لا تضع Password أو Cookie أو Token في GitHub أو في الشات أو في command line.
-
-## طريقة الاستخدام التي تقصدها
+The user can write one normal instruction to the Agent:
 
 ```text
-المستخدم: ادخل على الخدمة المحددة، استخدم Agent Account Google ID، ومعاك ساعة.
-
-الـ Agent: يستدعي الأداة ويطلب جلسة لمدة ساعة.
-
-الأداة: تنشئ Session وBrowser Profile منفصل، تربط الهوية المصرح بها، تشغل Timer، وتعرض Live Events.
-
-الـ Agent: ينفذ المهمة من خلال Adapter رسمي أو Browser Runtime مصرح به.
-
-المستخدم: يشاهد الجلسة ويقدر يعمل Pause أو Stop أو Kill.
-
-الأداة: عند انتهاء الساعة توقف كل شيء وتمسح البيانات المؤقتة.
+Open the approved Microsoft workspace, use the Agent Account, and work for one hour.
 ```
 
-المستخدم لا يريد يكتب عشرين أمرًا. هذا هو سبب وجود الـ Skill: المستخدم يقول المهمة والمدة، والـ Agent يستدعي الأداة. لكن كل موقع له طريقة دخول وصلاحيات منفصلة، ولا يوجد مفتاح سحري يجعل Google login يعمل في كل خدمة.
+The Agent calls the tool. The tool checks the Agent identity and capabilities, creates or reuses the Agent Account record, starts the browser session, starts the timer, and exposes only opaque references to the Agent.
 
-## ما هو منفذ الآن وما هو جاهز للإضافة
+## The site list
 
-المنفذ الآن هو Supervisor للجلسة، Timer، process control، الهوية المرجعية، Google OAuth الرسمي للهوية فقط، المتصفح المعزول، domain allowlist، Live Events، Browser Watch، Cleanup، وClaude/Codex adapters.
+The current matrix contains **8 named service entries**. They are integration targets with explicit provider conditions. A named site is not automatically a working login adapter just because it has a Google sign-in button.
 
-الجاهز للإضافة هو Adapter مستقل لكل خدمة تسمح رسميًا بـ OAuth/OIDC/API، مع تعريف الصلاحيات والإلغاء والـ retention. أما إنشاء حسابات Google تلقائيًا أو توزيعها أو استخدام كلمة مرور أو Cookie للدخول في مواقع متعددة فليس جزءًا من الكود.
+| # | Service | Official path that may be used | Current status |
+|---:|---|---|---|
+| 1 | Google Workspace / Google Cloud | Google OAuth, Workspace SSO, Service Account, or Workload Identity where supported | Conditional; identity OAuth is present, third-party account provisioning is not claimed. |
+| 2 | Microsoft Entra External ID | OIDC or Google federation configured by the tenant | Conditional; it requires tenant configuration and is not a universal Microsoft login. |
+| 3 | Notion | Notion OAuth integration or Notion API | Conditional; requires an approved integration and scopes. |
+| 4 | Slack | Slack OAuth app or Workspace SSO | Conditional; requires Workspace or app authorization. |
+| 5 | GitLab | GitLab OAuth, OIDC, group SSO, or API | Conditional; depends on the instance or group configuration. |
+| 6 | Atlassian Cloud | OAuth, SAML/SSO, or an official API | Conditional; depends on organization identity settings. |
+| 7 | Linear | Linear OAuth integration or API | Conditional; requires an approved integration. |
+| 8 | GitHub | GitHub OAuth App, GitHub App, or Enterprise SSO | Conditional; GitHub is not advertised as a universal Google-login target. |
 
-## مراجع المزودين
+The number of services documented is **8**. The number of third-party websites with a fully automated login adapter in the current repository is **0**. The current repository provides the Account Runtime, browser lifecycle, provider capability model, policy layer, and integration contracts; it does not pretend that a provider-specific website login is already implemented when it is not.
 
-[1]: https://developers.google.com/identity/protocols/oauth2 "Google OAuth 2.0"
-[2]: https://developers.google.com/identity/openid-connect/openid-connect "Google OpenID Connect"
-[3]: https://learn.microsoft.com/en-us/entra/external-id/customers/how-to-google-federation-customers "Microsoft Entra External ID Google federation"
-[4]: https://developers.notion.com/docs/authorization "Notion authorization"
-[5]: https://api.slack.com/authentication/oauth-v2 "Slack OAuth v2"
-[6]: https://docs.gitlab.com/api/oauth/ "GitLab OAuth"
-[7]: https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/ "Atlassian OAuth 2.0"
-[8]: https://linear.app/developers/oauth "Linear OAuth"
-[9]: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps "GitHub OAuth Apps"
+## What counts as a supported login path
+
+A service is eligible for an adapter when it officially exposes OAuth, OpenID Connect, SSO, or an API that the Agent can use. The adapter must declare its scopes, lifecycle, verification behavior, revocation method, retention, and acceptable-use requirements.
+
+A site that only opens in Chrome is not automatically supported. A Google sign-in button alone does not create a universal credential or session bridge. If a service requires a provider-specific account, the matching provider adapter must be used.
+
+## Agents
+
+| Agent or environment | Current status | How it connects |
+|---|---|---|
+| Claude Code | First-class | Claude hook adapter for session events and policy decisions. |
+| Codex CLI | First-class | Codex process wrapper under the Supervisor. |
+| Gemini CLI | Generic command path | Can run as a local command; specialized adapter is a future integration. |
+| GitHub Copilot CLI | Generic command path | Can run as a local command; specialized hooks/MCP adapter is a future integration. |
+| MCP-compatible Agent | Integration target | Use an MCP contract for Account Runtime and Browser Runtime operations. |
+| Any local Agent command | Supervisor-compatible | Can run under TTL, but identity and browser integration must be explicit. |
+
+## Where it runs
+
+The current implementation is local-first. It runs where the project, the Agent, and the browser are installed.
+
+| Environment | Status |
+|---|---|
+| Linux | Best-supported path for process groups, pause/resume, Chromium, and the local runtime. |
+| macOS | Suitable for the session and browser lifecycle; process details depend on the local environment. |
+| WSL | Suitable when Python, the Agent, and Chromium are available in the same environment. |
+| Native Windows | Supervisor operation is possible; POSIX pause/resume and process-group behavior differ. |
+| Docker or VM | Recommended when stronger OS isolation and network egress controls are needed. |
+| CI/CD | Suitable for non-interactive tests; requires an approved external secret manager for any provider integration. |
+| Cloud browser | Not hosted by this repository; requires a separate browser runtime with authentication and live-view controls. |
+| Phone | No direct phone-to-sandbox browser bridge is included. |
+
+## Requirements
+
+You need Python 3.10 or newer, Git, a supported Agent or local command, a workspace, and a Chromium-compatible browser for browser sessions. You also need an explicit HTTPS domain allowlist and an Agent Account or identity reference for an identity-connected run.
+
+For Google OAuth, you need an Installed-App OAuth Client and a Google identity that is already owned and authorized by the operator or organization. The current flow requests identity scopes only and does not create a Google account or request Gmail, Drive, recovery, payment, or administration access.
+
+For an external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
+
+## The one-command workflow
+
+```text
+User: Open the approved service, use the Agent Account, and work for one hour.
+
+Agent: Calls Agent Account Google ID and requests a session with a one-hour TTL.
+
+Tool: Checks identity and capabilities, creates or reuses the Account record, starts the browser profile, and starts Live Events.
+
+Agent: Performs only the actions granted by the site capability and browser policy.
+
+User: Watches the activity and can Pause, Resume, Stop, Cancel, or Kill the run.
+
+Tool: At expiry, stops the task and temporary session data. The persistent Agent Account record is kept unless explicitly revoked.
+```
+
+## Current CLI examples
+
+```bash
+python3 -m pip install -e .
+agent-account-google-id account capabilities
+agent-account-google-id account sites
+agent-account-google-id account create --agent-id research-agent --display-name "Research Agent"
+agent-account-google-id browser create --ttl 3600 --allow-domain example.com --persistent-profile --account-id <account-id>
+agent-account-google-id browser state <browser-session-id> --url https://example.com/ --page "Home" --action "Reading"
+agent-account-google-id browser verification <browser-session-id> example.com phone_required
+```
+
+The CLI exposes the lifecycle and control surfaces. It does not claim to provision a third-party consumer account when the provider has not exposed that operation.
+
+## Product boundary
+
+The user does not hand over a personal account by default. An Agent Account is separate from the user's personal browser profile. Provider adapters must report unsupported operations instead of silently delegating to the user's personal account.
+
+The runtime protects the model from raw credential material. The Agent receives an opaque handle, while provider-managed secrets remain outside the model context. The tool does not bypass CAPTCHA, MFA, anti-bot systems, rate limits, or provider restrictions.

@@ -7,7 +7,9 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
+from .accounts import AccountVault, GoogleProvider, LocalManagedAccountProvisioner
 from .browser import BrowserSessionManager
+from .capabilities import CapabilityRegistry
 from .events import EventLog
 from .google_oauth import GoogleOAuthClient, GoogleOAuthConfig
 from .identity import GoogleIdentityMetadataAdapter, IdentityStore, OperatorAttachedIdentityAdapter
@@ -27,7 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--sessions-dir", type=Path, default=argparse.SUPPRESS)
     run.add_argument("--allow-network", action="store_true", help="allow network-capable command guardrails")
     run.add_argument("--identity-id", default=None, help="non-secret identity reference for an automatic browser session")
+    run.add_argument("--account-id", default=None, help="persistent Agent Account record; never a password or token")
+    run.add_argument("--persistent-profile", action="store_true", help="reuse the account's persistent browser profile")
     run.add_argument("--identity-dir", type=Path, default=None)
+    run.add_argument("--account-dir", type=Path, default=None)
     run.add_argument("--allow-domain", action="append", dest="allowed_domains", default=None, help="approved browser domain; repeat for more domains")
     run.add_argument("--browser-start-url", default=None, help="approved HTTPS URL to open with the session")
     run.add_argument("--browser-bin", default=None, help="Chromium-compatible executable")
@@ -85,6 +90,26 @@ def build_parser() -> argparse.ArgumentParser:
     google_auth.add_argument("--no-browser", action="store_true", help="print the authorization URL instead of opening it")
     google_auth.add_argument("--timeout", type=int, default=300)
 
+    account = sub.add_parser("account", help="manage non-secret Agent Account records and provider capabilities")
+    account_sub = account.add_subparsers(dest="account_action", required=True)
+    account_create = account_sub.add_parser("create", help="create a persistent local account record")
+    account_create.add_argument("--account-dir", type=Path, default=None)
+    account_create.add_argument("--agent-id", required=True)
+    account_create.add_argument("--display-name", required=True)
+    account_show = account_sub.add_parser("show", help="show safe account metadata")
+    account_show.add_argument("--account-dir", type=Path, default=None)
+    account_show.add_argument("account_id")
+    account_revoke = account_sub.add_parser("revoke", help="revoke a local account record")
+    account_revoke.add_argument("--account-dir", type=Path, default=None)
+    account_revoke.add_argument("account_id")
+    account_caps = account_sub.add_parser("capabilities", help="list provider capabilities")
+    account_caps.add_argument("--provider", choices=("google", "local"), default=None)
+    account_sites = account_sub.add_parser("sites", help="list supported site capability records")
+    account_sites.add_argument("--site-id", default=None)
+    account_vault = account_sub.add_parser("vault-reference", help="store a non-secret opaque account handle reference")
+    account_vault.add_argument("--account-dir", type=Path, default=None)
+    account_vault.add_argument("handle")
+
     browser = sub.add_parser("browser", help="manage an isolated, operator-authorized browser session")
     browser_sub = browser.add_subparsers(dest="browser_action", required=True)
 
@@ -94,6 +119,8 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--allow-domain", action="append", dest="allowed_domains", required=True)
     create.add_argument("--identity-provider", default="operator-attached")
     create.add_argument("--identity-id", default=None, help="non-secret identity reference created with identity attach")
+    create.add_argument("--account-id", default=None, help="persistent Agent Account record")
+    create.add_argument("--persistent-profile", action="store_true", help="reuse the account's persistent browser profile")
 
     launch = browser_sub.add_parser("launch", help="launch a browser profile after URL policy approval")
     launch.add_argument("--browser-dir", type=Path, default=None)
@@ -127,6 +154,19 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--browser-dir", type=Path, default=None)
     show.add_argument("session_id")
 
+    browser_state = browser_sub.add_parser("state", help="record non-secret current browser state")
+    browser_state.add_argument("--browser-dir", type=Path, default=None)
+    browser_state.add_argument("session_id")
+    browser_state.add_argument("--url", required=True)
+    browser_state.add_argument("--page", default=None)
+    browser_state.add_argument("--action", dest="browser_action_label", default="observed")
+
+    browser_verification = browser_sub.add_parser("verification", help="record a real provider verification state")
+    browser_verification.add_argument("--browser-dir", type=Path, default=None)
+    browser_verification.add_argument("session_id")
+    browser_verification.add_argument("domain")
+    browser_verification.add_argument("state", choices=("not_detected", "email_required", "phone_required", "otp_required", "mfa_required", "captcha_detected", "provider_blocked", "completed"))
+
     browser_watch = browser_sub.add_parser("watch", help="follow local browser events")
     browser_watch.add_argument("--browser-dir", type=Path, default=None)
     browser_watch.add_argument("session_id")
@@ -157,21 +197,41 @@ def cmd_run(args) -> int:
     supervisor = supervisor_from(args)
     browser_manager = None
     browser_manifest = None
-    requested_browser = bool(args.identity_id or args.allowed_domains or args.browser_start_url)
+    requested_browser = bool(args.identity_id or args.allowed_domains or args.browser_start_url or args.account_id or args.persistent_profile)
+    account_manager = None
+    account = None
     if requested_browser:
-        if not args.identity_id or not args.allowed_domains:
-            raise SystemExit("automatic browser context requires --identity-id and at least one --allow-domain")
-        try:
-            identity_store_from(args).get(args.identity_id)
-        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
-            raise SystemExit(f"identity reference is not attached: {args.identity_id}") from exc
+        if not args.allowed_domains:
+            raise SystemExit("automatic browser context requires at least one --allow-domain")
+        if not args.identity_id and not args.account_id:
+            raise SystemExit("automatic browser context requires --identity-id or --account-id")
+        if args.identity_id:
+            try:
+                identity_store_from(args).get(args.identity_id)
+            except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+                raise SystemExit(f"identity reference is not attached: {args.identity_id}") from exc
+        if args.persistent_profile and not args.account_id:
+            raise SystemExit("--persistent-profile requires --account-id")
+        if args.account_id:
+            account_manager = LocalManagedAccountProvisioner(args.account_dir or Path.home() / ".agentguard" / "accounts")
+            account = account_manager.get(args.account_id)
         browser_manager = BrowserSessionManager(args.browser_dir)
-        browser_manifest = browser_manager.create(args.ttl, tuple(args.allowed_domains), identity_provider="google", identity_id=args.identity_id)
+        browser_manifest = browser_manager.create(
+            args.ttl,
+            tuple(args.allowed_domains),
+            identity_provider="google",
+            identity_id=args.identity_id,
+            account_id=args.account_id,
+            persistent_profile=args.persistent_profile,
+        )
+        if account_manager is not None and account is not None:
+            account_manager.initialize_browser_session(account, Path(browser_manifest.profile_dir))
     try:
         context = None
         if browser_manifest is not None:
             context = {
                 "identity_id": args.identity_id,
+                "account_id": args.account_id,
                 "browser_session_id": browser_manifest.session_id,
                 "browser_profile": browser_manifest.profile_dir,
                 "browser_allowed_domains": ",".join(browser_manifest.allowed_domains),
@@ -182,6 +242,8 @@ def cmd_run(args) -> int:
         if browser_manifest is not None and browser_manager is not None:
             extra_env = {
                 "AGENTGUARD_IDENTITY_ID": args.identity_id,
+                "AGENTGUARD_ACCOUNT_ID": args.account_id or "",
+                "AGENTGUARD_ACCOUNT_HANDLE": f"agent_account://local/{args.account_id}" if args.account_id else "",
                 "AGENTGUARD_BROWSER_SESSION_ID": browser_manifest.session_id,
                 "AGENTGUARD_BROWSER_PROFILE": browser_manifest.profile_dir,
                 "AGENTGUARD_BROWSER_ALLOWED_DOMAINS": ",".join(browser_manifest.allowed_domains),
@@ -298,6 +360,44 @@ def cmd_google_auth(args) -> int:
     return 0
 
 
+def account_manager_from(args) -> LocalManagedAccountProvisioner:
+    root = getattr(args, "account_dir", None) or Path.home() / ".agentguard" / "accounts"
+    return LocalManagedAccountProvisioner(root, AccountVault(root / "vault"))
+
+
+def cmd_account(args) -> int:
+    if args.account_action == "sites":
+        registry = CapabilityRegistry()
+        rows = registry.list_sites() if not args.site_id else [registry.get_site(args.site_id)]
+        print(json.dumps([row.safe_metadata() for row in rows], ensure_ascii=False, indent=2))
+        return 0
+    if args.account_action == "capabilities":
+        providers = [args.provider] if args.provider else ["google", "local"]
+        rows = []
+        for provider in providers:
+            descriptor = GoogleProvider().capabilities() if provider == "google" else LocalManagedAccountProvisioner(Path.home() / ".agentguard" / "accounts").capabilities()
+            rows.append(descriptor.safe_metadata())
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+    manager = account_manager_from(args)
+    if args.account_action == "create":
+        account = manager.create_account(args.agent_id, args.display_name)
+        print(json.dumps(account.safe_metadata(), ensure_ascii=False, indent=2))
+        return 0
+    if args.account_action == "show":
+        print(json.dumps(manager.get(args.account_id).safe_metadata(), ensure_ascii=False, indent=2))
+        return 0
+    if args.account_action == "revoke":
+        account = manager.revoke_account(manager.get(args.account_id))
+        print(json.dumps(account.safe_metadata(), ensure_ascii=False, indent=2))
+        return 0
+    if args.account_action == "vault-reference":
+        reference_id = manager.vault.put_reference(args.handle)
+        print(json.dumps({"reference_id": reference_id, "handle": args.handle}, ensure_ascii=False, indent=2))
+        return 0
+    raise SystemExit("unknown account action")
+
+
 def cmd_identity(args) -> int:
     store = identity_store_from(args)
     if args.identity_action == "attach":
@@ -359,7 +459,16 @@ def cmd_browser_watch(args) -> int:
 def cmd_browser(args) -> int:
     manager = browser_from(args)
     if args.browser_action == "create":
-        manifest = manager.create(args.ttl, tuple(args.allowed_domains), args.identity_provider, args.identity_id)
+        if args.persistent_profile and not args.account_id:
+            raise SystemExit("--persistent-profile requires --account-id")
+        manifest = manager.create(
+            args.ttl,
+            tuple(args.allowed_domains),
+            args.identity_provider,
+            args.identity_id,
+            args.account_id,
+            args.persistent_profile,
+        )
         print(json.dumps(asdict(manifest), ensure_ascii=False, indent=2))
         return 0
     if args.browser_action == "launch":
@@ -379,6 +488,14 @@ def cmd_browser(args) -> int:
     if args.browser_action == "login-complete":
         manager.mark_manual_login_complete(args.session_id, args.domain)
         print(json.dumps({"ok": True, "event": "browser.login_manual_signal", "domain": args.domain, "verified": False}))
+        return 0
+    if args.browser_action == "state":
+        decision = manager.record_browser_state(args.session_id, args.url, args.page, args.browser_action_label)
+        print(json.dumps(asdict(decision), ensure_ascii=False, indent=2))
+        return 0 if decision.allowed else 2
+    if args.browser_action == "verification":
+        manager.record_verification_state(args.session_id, args.state, args.domain)
+        print(json.dumps({"ok": True, "event": "browser.verification_state", "domain": args.domain, "state": args.state}, ensure_ascii=False))
         return 0
     if args.browser_action == "cleanup":
         manager.cleanup(args.session_id, args.reason)
@@ -404,6 +521,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_policy_check(args)
     if args.action == "identity":
         return cmd_identity(args)
+    if args.action == "account":
+        return cmd_account(args)
     if args.action == "google-auth":
         return cmd_google_auth(args)
     if args.action == "browser":

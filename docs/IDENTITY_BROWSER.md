@@ -1,48 +1,158 @@
-# Identity and browser session boundary
+# Agent Account Google ID — Identity and Browser Runtime
 
 ## Purpose
 
-The identity layer gives an AI agent a **reference** to an operator-authorized identity and a temporary browser profile. It does not make the agent the legal owner of a Google account, create accounts, or prove that a login succeeded. Account ownership, provider approval, normal MFA/CAPTCHA handling, and acceptable-use compliance remain outside the process.
+The identity and browser layers give an existing Agent an independent Account record, identity reference, browser profile, persistent session, task timer, Live State, and controls. The user brings the Agent, model access, Agent Key, workspace, and runtime. The Tool adds the operating layer around that Agent.
 
-## Data model
+The Account Runtime does not silently turn the user's personal account into an Agent Account. Providers declare which account, identity, browser, login, verification, recovery, rotation, and revocation operations they officially expose. Unsupported operations are reported as unavailable.
 
-`IdentityRef` contains only a generated local ID, provider name, provider subject, optional email metadata, verification metadata supplied by the operator/provider, an authorization basis, and a timestamp. `IdentityStore` writes this metadata to a local JSON file. It rejects credential-like fields such as `password`, `cookie`, `access_token`, `refresh_token`, `secret`, and `private_key`.
+## Account Runtime data model
 
-`BrowserSessionManifest` contains the session ID, identity reference, allowlisted domains, profile path, TTL timestamps, browser PID/PGID, and lifecycle state. It never contains browser cookies, passwords, tokens, recovery codes, or page contents.
+`AgentAccount` contains a generated account ID, opaque account handle, Agent ID, provider name, display name, lifecycle state, timestamps, identity reference, verification state, session state, and browser-profile reference. It does not contain passwords, cookies, OAuth tokens, recovery codes, or private keys.
 
-## Automatic agent context
+`ProviderCapabilities` records whether a provider supports account creation, identity initialization, credential initialization, browser sessions, persistent sessions, verification, recovery, rotation, and revocation. `GoogleProvider` reports third-party account provisioning as unavailable when the provider does not expose that operation.
 
-When the user has an attached non-secret identity reference and an approved domain allowlist, `agentguard run` can create the browser session before starting the Agent. It records the browser session in the Agent metadata, passes only `AGENTGUARD_IDENTITY_ID`, `AGENTGUARD_BROWSER_SESSION_ID`, `AGENTGUARD_BROWSER_PROFILE`, and `AGENTGUARD_BROWSER_ALLOWED_DOMAINS` to the child, and calls cleanup when the Agent exits or the TTL expires. The local event streams can be followed with `agentguard watch` and `agentguard browser watch`.
+`AccountVault` stores opaque references and flat safe metadata only. It rejects credential-like fields, including `password`, `cookie`, `access_token`, `refresh_token`, `secret`, `recovery_code`, and `private_key`.
+
+## Account lifecycle
+
+The runtime models the following lifecycle:
+
+```text
+CREATE
+  -> PROVISION
+  -> INITIALIZE
+  -> LOGIN / VERIFICATION
+  -> SESSION ACTIVE
+  -> USE
+  -> PAUSE / RESUME
+  -> EXPIRE TASK
+  -> REAUTHENTICATE
+  -> REVOKE
+  -> DESTROY LOCAL SESSION DATA
+```
+
+Task expiry ends the current Agent task and browser session. It does not delete the persistent Agent Account record or persistent profile. Revocation and account destruction are separate explicit operations.
+
+## Browser session data model
+
+`BrowserSessionManifest` contains the session ID, provider, identity reference, Account ID, persistence flag, allowlisted domains, profile path, TTL timestamps, browser PID/PGID, login state, verification state, current URL, current page label, current action, and lifecycle state.
+
+The manifest never contains browser cookies, passwords, access tokens, refresh tokens, recovery codes, private keys, or raw page contents.
+
+## Automatic Agent context
+
+When an Account or identity reference and an approved domain allowlist are present, `agent-account-google-id run` can create the browser context before starting the Agent. It records the Account and browser session in the Agent metadata and passes only non-secret `AGENTGUARD_*` identifiers, the profile path, and the approved domain list to the child process.
+
+The Agent never receives raw credentials from this package. Provider-managed secret material must remain in an external provider-approved boundary.
+
+## Persistent browser profile
+
+A persistent profile is owned by an Agent Account, not by the user's personal browser. Profiles must not be shared between Agents or concurrent tasks.
+
+Example:
+
+```bash
+agent-account-google-id browser create \
+  --ttl 3600 \
+  --account-id <account-id> \
+  --persistent-profile \
+  --identity-provider google \
+  --identity-id <identity-id> \
+  --allow-domain approved.example
+```
+
+At task expiry, the runtime stops the active browser and temporary task context. The persistent profile remains for a later task unless the Account is explicitly revoked or destroyed.
 
 ## Browser policy
 
-A URL is allowed only when it uses HTTPS, has no embedded credentials, resolves to a public hostname, and matches an explicit exact-or-subdomain allowlist. Localhost, private/link-local/reserved/multicast/metadata targets, and sensitive Google services are blocked. Gmail, Drive, payments, admin, account-management, recovery, password, and challenge paths are intentionally excluded.
+A URL is allowed only when it uses HTTPS, contains no embedded credentials, resolves to a public hostname, and matches an explicit exact-or-subdomain allowlist. Localhost, private/link-local/reserved/multicast/metadata targets, sensitive Google services, recovery paths, password paths, payment paths, and account-administration paths are blocked by default.
 
-The policy is evaluated by the CLI before a launch or a recorded navigation event. It is not a browser extension or an egress firewall. A determined child process or a browser feature may still reach another endpoint unless the deployment adds OS-level network enforcement.
+The policy is a guardrail, not an operating-system sandbox or egress firewall. Strong isolation requires a user-controlled container or VM with OS-level network controls.
 
-## Manual login handoff
+## Login and verification state
 
-The safe flow is:
+The browser runtime records explicit state without inventing provider requirements:
 
-1. The operator creates a session with a short TTL and explicit domains.
-2. The operator launches the isolated profile.
-3. The tool emits `browser.login_handoff_required` and pauses the workflow conceptually at the consent boundary.
-4. The authorized operator completes the provider's own login, MFA, or CAPTCHA UI manually.
-5. The operator may record `browser.login_manual_signal`. The event is not cryptographic proof and is marked `verified: false`.
-6. The browser and profile are stopped and removed at explicit cleanup or TTL expiry.
+```text
+login_state:
+  not_started
+  login_required
+  active
+  reauthentication_required
+  blocked
 
-The agent is never given a password or recovery code by this package. A provider-specific integration may be added only after a separate authorization and threat-model review.
+verification_state:
+  not_detected
+  email_required
+  phone_required
+  otp_required
+  mfa_required
+  captcha_detected
+  provider_blocked
+  completed
+```
+
+A verification state is recorded only when the provider or website actually shows it. The runtime does not bypass CAPTCHA, MFA, anti-bot controls, rate limits, or provider restrictions.
+
+## Live Browser State
+
+The local Live View can expose safe state such as:
+
+```text
+Agent: ResearchAgent
+Status: ACTIVE
+Account: opaque handle only
+Browser: running
+Current URL: https://approved.example/task
+Current Page: Task page
+Current Action: Reading
+Timer: 18:42
+Verification: not_detected
+```
+
+The `browser state` command updates the current URL, short page label, and current action after policy validation:
+
+```bash
+agent-account-google-id browser state <browser-session-id> \
+  --url https://approved.example/task \
+  --page "Task page" \
+  --action "Reading"
+```
+
+The Live View never shows passwords, cookies, access tokens, refresh tokens, recovery material, private keys, or raw page secrets.
+
+## Controls
+
+The user can observe and control the run:
+
+```bash
+agent-account-google-id watch <session-id> --follow
+agent-account-google-id browser watch <browser-session-id> --follow
+agent-account-google-id pause <session-id>
+agent-account-google-id resume <session-id>
+agent-account-google-id stop <session-id> --reason user_requested
+agent-account-google-id browser cleanup <browser-session-id>
+```
+
+The Kill path is outside the Agent. It stops the Agent process group, tracked browser process, active actions, and new actions. It records the reason. Account revocation is separate from task cleanup.
 
 ## Lifecycle events
 
 | Event | Meaning |
 |---|---|
-| `browser.session_created` | A new ephemeral manifest and profile directory were created. |
-| `browser.navigation.allowed` | A URL passed the local policy decision. |
-| `browser.navigation.blocked` | A URL was rejected by the local policy. |
-| `browser.login_handoff_required` | The operator must use the normal provider UI. |
-| `browser.login_manual_signal` | The operator asserted that manual login finished; not verified. |
-| `browser.launch_requested` | A Chromium-compatible process was launched with the profile. |
-| `browser.session_cleanup` | The browser process was stopped and the profile was deleted. |
+| `account.requested` | The Agent requested an Account or account session. |
+| `account.capabilities_discovered` | The provider declared available operations. |
+| `account.provisioning_started` | Account provisioning started where supported. |
+| `account.provisioning_unavailable` | The provider does not expose the requested operation. |
+| `identity.attached` | An identity reference was attached. |
+| `browser.session_created` | A browser manifest and profile were created. |
+| `browser.navigation.allowed` | A URL passed the local policy. |
+| `browser.navigation.blocked` | A URL was rejected by policy. |
+| `browser.launch_requested` | A Chromium-compatible process was started. |
+| `browser.state_updated` | Safe current browser state changed. |
+| `browser.verification_state` | A real provider verification state was recorded. |
+| `browser.session_cleanup` | The active browser session was stopped and temporary data was cleaned. |
+| `account.revoked` | Account revocation was requested. |
 
-All events pass through the existing redactor. The event stream is local and append-only; it is not a remote live video stream. A future remote observer would require authentication, authorization, redaction, retention limits, and explicit consent.
+All events pass through the redactor. The local event stream is append-only and is not a remote video stream.

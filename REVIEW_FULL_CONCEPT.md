@@ -1,144 +1,320 @@
 # Agent Account Google ID — Give Your AI an Identity
 
-## حالة هذا الملف
+## What this file is
 
-هذا الملف هو **منطقة مراجعة غير تشغيلية** لفكرة المنتج الأصلية كما وصفها صاحب المشروع. الغرض منه أن يراجع المستخدم الفكرة كاملة قبل اعتماد أي تنفيذ. الملف يصف المنتج وتجربة الاستخدام والمكونات المطلوبة والحالات والنتائج المتوقعة، لكنه لا ينشئ حسابات، ولا يحتوي على كلمات مرور أو Cookies أو Tokens، ولا ينفذ تسجيل دخول حقيقيًا.
+This file describes the full product concept and the expected user experience. It is part of the product documentation and acceptance criteria. It does not contain passwords, cookies, access tokens, recovery codes, or executable third-party account-creation logic.
 
-اسم المستودع والمنتج لا يتغيران:
+The product name is:
 
 > **Agent Account Google ID — Give Your AI an Identity**
 
-## الفكرة في جملة واحدة
+## The idea in one sentence
 
-أداة/Skill تُثبت داخل Agent يملكه المستخدم، مثل Claude Code أو Codex، وتعطي الـ Agent هوية Google حقيقية مخصصة له ومتصفحًا حقيقيًا يستطيع من خلالهما البحث وتسجيل الدخول وتنفيذ المهام، بينما يحدد المستخدم الأمر والمدة فقط ويراقب الجلسة ويتحكم فيها.
+This is a Tool/Skill installed beside an Agent the user already owns, such as Claude Code or Codex. It gives the Agent its own identity, Agent Account, browser profile, persistent session, real browser, and controlled Internet access so the Agent can perform real web tasks while the user provides the task and time limit and watches the run.
 
-## المشكلة التي تحلها الفكرة
+## The problem
 
-الـ Agent يستطيع التفكير وكتابة الأوامر واستخدام الأدوات، لكنه قد يتوقف عندما يحتاج إلى هوية حقيقية أو جلسة متصفح حقيقية أو تسجيل دخول إلى خدمة خارجية. فكرة المنتج تضيف طبقة هوية وتشغيل حول الـ Agent، بحيث لا يضطر المستخدم إلى تنفيذ كل خطوة يدويًا أو إعطاء الـ Agent حسابه الشخصي.
+An Agent can reason, write commands, and use tools, but it may stop when a task needs a real identity, a real browser session, or a signed-in external service. This product adds the identity and operating layer around the Agent. It does not replace the Agent, the model, the user's API key, the workspace, or the user's environment.
 
-المنتج لا يستبدل الـ Agent ولا النموذج ولا البيئة التي يستخدمها المستخدم. المستخدم يأتي بالـ Agent والنموذج ومفتاحه أو اشتراكه وبيئته، بينما الأداة تضيف الهوية والجلسة والمتصفح والتحكم والمراقبة.
+The user's Agent remains the user's Agent. The product adds the account lifecycle, browser lifecycle, capabilities, timer, Live State, controls, policy checks, audit trail, and cleanup.
 
-## الأطراف في التجربة
+## The parties
 
-| الطرف | دوره في الفكرة |
+| Party | Role |
 |---|---|
-| المستخدم | يثبت الأداة، يحدد المهمة، يحدد مدة الجلسة، يراقب ما يحدث، ويستطيع الإيقاف أو الإلغاء. |
-| الـ Agent | يستدعي الأداة من خلال الشات أو Skill، يستخدم الهوية والمتصفح، ويخطط وينفذ المهمة. |
-| الأداة | تنشئ وتدير جلسة الهوية والمتصفح، تطبق المدة والسياسات، تسجل الأحداث، وتنفذ الإيقاف والتنظيف. |
-| هوية الـ Agent | حساب Google حقيقي مخصص للـ Agent وليس حساب المستخدم الشخصي. |
-| الموقع الخارجي | خدمة تدعم تسجيل الدخول بحساب Google أو طريقة تسجيل دخول متوافقة مع الهوية. |
+| User | Installs the Tool, provides the task and time limit, watches the run, and can pause, stop, or kill it. |
+| Agent | Calls the Tool from chat, requests an Account Session, uses the granted capabilities, and performs the task. |
+| Agent Account ID Tool | Manages the Account Runtime, Browser Runtime, TTL, policies, Live State, controls, events, and cleanup. |
+| Agent Identity | A separate identity intended for the Agent, not the user's personal browser or personal account. |
+| Provider | Declares which account, identity, browser, login, verification, recovery, rotation, and revocation operations it officially exposes. |
+| Website | A target service that accepts an officially supported OAuth/OIDC/SSO/API or provider-specific login path. |
 
-## تجربة المستخدم الأصلية
+## The user experience
 
-### التثبيت
+### Install
 
-ينزل المستخدم الأداة ويثبتها داخل Claude Code أو Codex أو أي Agent يدعم Skills أو Tools أو MCP. لا يحتاج المستخدم إلى استبدال النموذج أو تغيير الـ Agent الذي يستخدمه.
+The user installs the Tool/Skill inside Claude Code, Codex, or another Agent that supports Tools, Skills, or MCP. The user does not replace the Agent or the model.
 
-### طلب المهمة
+### Ask for a task
 
-يكتب المستخدم داخل الشات أمرًا طبيعيًا، مثل:
+The user writes one normal instruction in the Agent chat:
 
 ```text
-استخدم Agent Account Google ID لمدة ساعة، وابحث عن المعلومات المطلوبة، وسجل الدخول بالمهمة المطلوبة، ثم نفذ العمل.
+Use Agent Account Google ID for one hour, open the approved service, search for the requested information, and complete the task.
 ```
 
-المستخدم لا يريد كتابة أوامر منفصلة لكل خطوة. الـ Agent هو الذي يستدعي الأداة تلقائيًا، والأداة تبدأ الجلسة حسب المدة والسياسات المحددة.
+The user does not want to write a separate command for every click. The Agent calls the Tool and requests a session with a duration and capability set.
 
-### بدء الجلسة
+### Start a session
 
-عند استدعاء الأداة، تُنشئ جلسة مستقلة للـ Agent وتربط بها الهوية المخصصة والمتصفح الحقيقي. يتم تسجيل وقت البداية ووقت الانتهاء والـ Agent المستخدم والمواقع المسموحة والسياسات المطبقة.
+The Tool checks the Agent identity, provider capability record, site allowlist, and requested capabilities. It creates or reuses an Agent Account record, starts or reuses the Agent's browser profile, records the start and expiry time, and starts the Live State and Activity Feed.
 
-### تنفيذ المهمة
+### Do the task
 
-يستطيع الـ Agent استخدام المتصفح للبحث وفتح المواقع والتعامل مع الصفحات وتسجيل الدخول وتنفيذ المهمة المطلوبة باستخدام هوية الـ Agent. المستخدم لا يحتاج إلى إعطاء الـ Agent حسابه الشخصي أو تشغيل كل خطوة بنفسه.
+The Agent uses a real browser and the real Internet inside the configured environment. The Agent can search, read, navigate, and use an approved service according to the capabilities granted to that Agent and site.
 
-### انتهاء الجلسة
+The user watches the session. The user does not need to control every click.
 
-عند انتهاء المدة المحددة، تتوقف جلسة الـ Agent والمتصفح والعمليات التابعة له، وتنتهي صلاحية السياق المرتبط بالمهمة، ويتم تنظيف البيانات المؤقتة حسب سياسة الجلسة.
+### End the task
 
-## هوية Google الخاصة بالـ Agent
+When the task TTL expires, the Tool stops the task and the current browser session. The persistent Agent Account record and persistent profile are not deleted merely because the task timer expired. Temporary task data is cleaned according to the lifecycle policy. Explicit account revocation is a separate operation.
 
-الفكرة الأصلية تعتمد على أن يكون للـ Agent حساب Google حقيقي مخصص له. المستخدم لا يتعامل مع الحساب كحسابه الشخصي، ولا يدخل إليه لاستخدامه اليومي. الهوية تُستخدم كهوية تشغيلية للـ Agent أثناء جلساته.
+## Core Account Runtime
 
-في التصور الكامل للمنتج، يملك الـ Agent هوية مستقلة يمكن للمواقع التعرف عليها عند استخدام تسجيل الدخول بحساب Google. الهوية ليست مجرد اسم داخل الأداة؛ هي حساب حقيقي يراه الموقع الخارجي كحساب Google مستقل.
+The core architecture is:
 
-تظل أجزاء الحساب الحساسة خارج نطاق عمل الـ Agent، مثل البريد الإلكتروني الشخصي، وDrive، وإعدادات كلمة المرور، والاسترداد، والدفع، وإدارة الحساب. الغرض من الهوية هو تمكين مهام الويب والتسجيل وتسجيل الدخول، وليس منح وصول إداري كامل إلى حساب Google.
+```text
+Agent Key
+    -> Agent Identity
+    -> Account Provisioning Layer
+    -> Agent-owned Account
+    -> Credential Vault
+    -> Browser Profile
+    -> Persistent Session
+    -> Real Browser
+    -> Real Internet
+    -> Approved Website
+```
 
-## المتصفح الحقيقي
+Account Provisioning is a first-class capability in the architecture. It is not replaced by the user's personal account. Each Provider must declare its real capability state.
 
-الـ Agent لا يعمل فقط داخل HTTP client أو محاكاة صفحة. في فكرة المنتج، يستخدم متصفحًا حقيقيًا بملف تعريف منفصل خاص بالجلسة. المتصفح هو المكان الذي تحدث فيه عملية البحث والتصفح وتسجيل الدخول واستخدام المواقع.
+```text
+AccountProvisioner
+    - can_create_account()
+    - create_account()
+    - initialize_identity()
+    - initialize_credentials()
+    - initialize_browser_session()
+    - verify_state()
+    - recover_session()
+    - rotate_credentials()
+    - revoke_account()
+```
 
-كل جلسة لها ملف تعريف منفصل حتى لا تختلط جلسات Agents المختلفة، ولا تنتقل بيانات جلسة من مهمة إلى أخرى. المتصفح يظل مرتبطًا بمدة الجلسة وبمعرف الـ Agent وبسياسات المواقع.
+A provider can report states such as:
 
-## تسجيل الدخول للمواقع
+```text
+Provider A:
+  account_creation = supported
+  browser_session = supported
 
-الفكرة تستهدف المواقع التي تسمح بتسجيل الدخول باستخدام Google أو تدعم هوية متوافقة. الـ Agent يزور الموقع ويستخدم هوية Google المخصصة له لإتمام عملية الدخول ثم تنفيذ المهمة.
+Provider B:
+  account_creation = unavailable
+  browser_session = supported
 
-من منظور المستخدم، لا يريد المستخدم تسجيل الدخول يدويًا في كل مهمة. المطلوب أن يكتب الأمر والمدة فقط، وبعد أن تكون الهوية والبيئة جاهزتين، تتم العملية بين الـ Agent والأداة والمتصفح تلقائيًا.
+Provider C:
+  account_creation = requires_human_verification
+```
 
-كل موقع يُعامل كوجهة مستقلة لها نطاق وسياسة وصلاحيات. الموقع لا يحصل على حساب المستخدم الشخصي، بل يتعامل مع هوية الـ Agent المخصصة.
+If a provider does not expose an operation, the Tool reports:
 
-## المراقبة والتحكم
+```text
+Provider does not expose this operation.
+```
 
-| الوظيفة | السلوك المطلوب في الفكرة |
-|---|---|
-| Timer | المستخدم يحدد مثلًا 30 دقيقة أو ساعة أو مدة أخرى، وتنتهي الجلسة تلقائيًا. |
-| Live View | المستخدم يرى ما يفعله الـ Agent في المتصفح أو الأحداث الحية عندما تسمح البيئة بذلك. |
-| Pause | يوقف تنفيذ الـ Agent مؤقتًا دون حذف الجلسة. |
-| Resume | يعيد تشغيل الجلسة بعد الإيقاف المؤقت. |
-| Stop | يوقف المهمة الحالية والجلسة. |
-| Cancel | يلغي العملية الحالية ويمنع استمرارها. |
-| Kill Switch | يوقف الـ Agent والمتصفح والعمليات التابعة بسرعة. |
-| Event Timeline | يعرض بداية الجلسة والتنقلات والأوامر والنتيجة والتنظيف. |
-| Session Isolation | يمنع مشاركة ملفات التعريف أو حالة الدخول بين الجلسات. |
-| Automatic Expiry | ينهي الهوية التشغيلية وسياق المتصفح عند انتهاء الوقت. |
-| Cleanup | يحذف البيانات المؤقتة المرتبطة بالمهمة بعد انتهائها. |
+It does not silently replace an Agent Account with the user's personal account.
 
-## السياسات التي طلبها المستخدم
+## Agent-owned identity
 
-الهوية حقيقية، لكن استخدامها ليس مفتوحًا بلا حدود. يجب أن يستطيع صاحب الأداة تحديد ما يستطيع الـ Agent فعله، وما لا يستطيع فعله.
+The intended Agent Account is separate from the user's personal account. In a provider environment that officially supports managed Agent users, the account can have an email identity, provider account identifier, browser profile, session state, and provider-managed credential state.
 
-السياسات المطلوبة في التصور هي:
+The model receives only an opaque account handle such as:
 
-| المجال | القاعدة المطلوبة |
-|---|---|
-| البريد الإلكتروني | لا يسمح للـ Agent باستخدام Gmail أو قراءة البريد أو إرسال رسائل من الحساب. |
-| Drive | لا يسمح باستخدام Google Drive أو قراءة ملفاته أو تعديلها. |
-| كلمة المرور | لا يسمح بتغيير كلمة مرور الهوية أو قراءتها أو استخراجها. |
-| الاسترداد | لا يسمح بتغيير وسائل Recovery أو رموز الاسترداد أو إعدادات الأمان. |
-| الدفع | لا يسمح باستخدام وسائل الدفع أو صفحات الفوترة. |
-| إدارة الحساب | لا يسمح بتغيير بيانات الحساب أو إعداداته الإدارية. |
-| المواقع | المواقع التي تعمل عليها الجلسة يجب أن تكون قابلة للتحديد بسياسة واضحة. |
-| الوقت | لا تستمر الهوية أو الجلسة بعد انتهاء المدة المحددة. |
-| البيانات | لا تنتقل بيانات جلسة إلى Agent أو مستخدم آخر. |
+```text
+agent_account://provider/agent_123
+```
 
-## ما يراه المستخدم
+The model does not receive raw passwords, cookies, access tokens, refresh tokens, private keys, or recovery material. Provider-managed secrets remain in the provider's approved secret boundary and are never copied into the model context.
 
-في أثناء الجلسة، يرى المستخدم معرف الجلسة، والـ Agent المستخدم، ووقت البداية، والوقت المتبقي، وحالة المتصفح، والموقع الحالي، والأحداث الأساسية، والطلبات التي تم السماح بها أو منعها، وحالة المهمة.
+## Credential Vault boundary
 
-المستخدم لا يريد التحكم اليدوي في كل نقرة؛ دوره هو إصدار المهمة وتحديد الوقت والمراقبة والتدخل عند الحاجة. الهدف هو أن يكون الـ Agent هو المنفذ، والأداة هي طبقة الهوية والتحكم.
+The rule is:
 
-## ما يفعله الـ Agent
+```text
+THE MODEL NEVER RECEIVES RAW CREDENTIALS.
+```
 
-يستقبل الـ Agent طلب المستخدم من الشات. ثم يستدعي Skill أو Tool الخاصة بالمنتج، يطلب جلسة بمدة محددة، يستخدم المتصفح والهوية، ينفذ البحث أو التسجيل أو تسجيل الدخول أو المهمة المطلوبة، ويرسل نتيجة واضحة للمستخدم.
+The intended call path is:
 
-يجب أن يستطيع الـ Agent معرفة حالة الجلسة والوقت المتبقي وحالة المتصفح، وأن يتوقف عندما ترسل الأداة أمر Stop أو عندما ينتهي الـ TTL.
+```text
+Agent
+    -> Account Handle
+    -> Credential Manager / Provider Vault
+    -> Browser or Provider operation
+```
 
-## ما تفعله الأداة
+It is not:
 
-الأداة هي طبقة تشغيل لا تغيّر نموذج الـ Agent. مسؤولياتها في التصور الكامل هي:
+```text
+Agent
+    -> Password
+    -> Browser
+```
 
-1. استقبال طلب الجلسة من الـ Agent.
-2. إنشاء هوية تشغيلية أو ربط الهوية المخصصة للـ Agent.
-3. إنشاء متصفح وملف تعريف خاص بالجلسة.
-4. تطبيق مدة الجلسة وسياسات المواقع.
-5. إتاحة Live View أو Event View للمستخدم.
-6. تمرير أوامر Pause وResume وStop وCancel وKill.
-7. تسجيل الأحداث المهمة.
-8. إيقاف العمليات عند انتهاء المدة.
-9. حذف الملفات المؤقتة وإنهاء الجلسة.
+Tool output must be checked before it reaches the model. If a provider or browser operation returns secret material, the runtime must block the raw value and replace it with an opaque reference or a safe status. Redaction after the secret already reached the model is not enough.
 
-## بنية المكونات في التصور
+## Real browser
+
+The Agent uses a real Chromium-compatible browser and real Internet inside an environment owned and configured by the operator. This is not a fake browser, simulated website, mock Internet, or HTTP-only placeholder.
+
+Every Agent receives a separate profile:
+
+```text
+profiles/
+    agent_001/
+    agent_002/
+    agent_003/
+```
+
+Agent A must not use Agent B's profile. The Agent must not use the user's personal browser profile.
+
+## Persistent sessions
+
+An Agent Account and its browser profile can persist between tasks when the provider and runtime support it. Finishing one task does not delete the account or persistent profile.
+
+A later task can follow this path:
+
+```text
+Agent
+    -> Existing Agent Identity
+    -> Existing Agent Account
+    -> Existing Browser Profile
+    -> Existing Session
+    -> Continue
+```
+
+If the provider says the session is expired or invalid, the Account Runtime enters reauthentication or recovery state. It does not ask for the user's personal account as a silent fallback.
+
+## Real web tasks
+
+The Agent can perform real web tasks according to its capabilities:
+
+```text
+Open YouTube and search for the latest Microsoft news.
+Open an approved news service and read the latest headlines.
+Open an approved site and read the latest articles.
+Follow a channel when the site capability allows it.
+```
+
+The execution path is:
+
+```text
+Agent
+    -> Capability Check
+    -> Browser Action
+    -> Approved Website
+    -> Real Result
+    -> Agent
+```
+
+## Verification states
+
+The Tool must report the real state shown by the provider or website. It must not invent a requirement.
+
+If the website actually shows `Enter phone number`, the Tool can report:
+
+```text
+The website requires a phone number to continue creating or verifying the Agent Account.
+```
+
+If the website does not show a phone challenge, the Tool must not ask for a phone number. The same rule applies to email verification and OTP.
+
+The Agent Account's provider email is used for Agent Account verification when the provider supports it. The Tool does not silently substitute the user's personal Gmail.
+
+## CAPTCHA, MFA, and anti-bot controls
+
+The Tool does not bypass CAPTCHA, MFA, phone verification, email verification, anti-bot systems, rate limits, or provider restrictions.
+
+When a real challenge appears, the runtime:
+
+1. Detects the actual provider state.
+2. Reports only the challenge that is actually present.
+3. Requests the minimum required action when a human step is genuinely required.
+4. Does not invent requirements.
+5. Continues the lifecycle after the provider reports completion.
+
+The normal experience remains autonomous. Human intervention is exceptional and based on the real provider state.
+
+## Agent capabilities
+
+Capabilities are explicit and can be added or removed per Agent and per site:
+
+```text
+web.read
+web.search
+youtube.read
+youtube.follow
+microsoft.read
+browser.navigate
+```
+
+The runtime does not grant wildcard capabilities by default. Every action must pass the capability check and the browser policy.
+
+## Timer
+
+The user chooses the task TTL:
+
+```text
+TTL = 30 minutes
+```
+
+When the task TTL ends:
+
+```text
+Agent Task
+    -> Browser Session Stop
+    -> Process Stop
+    -> Temporary Task Cleanup
+```
+
+The timer ends the task. It does not delete the persistent Agent Account. Account destruction is a separate explicit lifecycle operation.
+
+## Kill Switch
+
+The user can issue:
+
+```text
+KILL AGENT
+```
+
+The Tool then stops the Agent, browser session, child processes, active actions, and new action requests, and records the reason. The Kill path is outside the Agent's control.
+
+## Pause and Resume
+
+`PAUSE` stops activity without deleting the Account or session record. `RESUME` continues only if the session is still valid and the provider has not revoked it.
+
+## Live Agent View
+
+Live View is more than a text Activity Feed. It should expose safe Browser State such as:
+
+```text
+Agent: ResearchAgent
+Status: ACTIVE
+Browser: Approved service
+Current URL: https://approved.example/
+Current Page: Search results
+Current Action: Reading an article
+Account: Agent Account handle only
+Timer: 18:42
+```
+
+It can include browser screenshot or snapshot updates, current URL, current page label, current action, session status, Agent status, and timer. It must never expose passwords, cookies, refresh tokens, recovery material, or private keys.
+
+## Activity Feed
+
+The user can see safe events such as:
+
+```text
+Agent opened the approved service.
+Agent searched for Microsoft news.
+Agent opened an article.
+Agent read the article.
+Agent completed the task.
+```
+
+The feed must not show raw credentials or provider session material.
+
+## Product component map
 
 ```text
 User Chat Command
@@ -149,101 +325,83 @@ User-owned Agent: Claude Code / Codex / compatible Agent
         v
 Agent Account Google ID Skill / Tool / MCP Contract
         |
+        +--> Agent Identity and Account Provisioner
+        |
+        +--> Credential Vault Boundary
+        |
         +--> Session Controller: TTL, Pause, Stop, Kill
         |
-        +--> Identity Runtime: Agent Google Identity reference
+        +--> Browser Runtime: real browser + isolated profile
         |
-        +--> Browser Runtime: Real browser + isolated profile
+        +--> Website Capability and Login Adapter
         |
-        +--> Website Login Layer: approved Google sign-in sites
+        +--> Policy Engine: domains, areas, actions
         |
-        +--> Policy Engine: blocked areas, domains, actions
+        +--> Live Observer: URL, page, action, screenshot/state
         |
-        +--> Live Observer: browser/events/status
-        |
-        +--> Audit and Cleanup: timeline, expiry, deletion
+        +--> Audit and Cleanup: timeline, expiry, revocation
 ```
 
-هذا الرسم يصف الفكرة فقط ولا يمثل برنامجًا تشغيليًا داخل هذا الملف.
+## Session lifecycle
 
-## دورة حياة الجلسة
+```text
+CREATE
+  -> PROVISION
+  -> INITIALIZE
+  -> LOGIN / VERIFICATION
+  -> SESSION ACTIVE
+  -> USE
+  -> PAUSE / RESUME
+  -> EXPIRE TASK
+  -> REAUTHENTICATE
+  -> REVOKE
+  -> DESTROY LOCAL SESSION DATA
+```
 
-| الحالة | الوصف |
+Expected session states include `requested`, `identity_attached`, `account_provisioning`, `browser_starting`, `login_in_progress`, `verification_required`, `active`, `paused`, `task_running`, `stop_requested`, `expired`, `reauthentication_required`, `cleaning`, `completed`, and `failed`.
+
+## Expected events
+
+| Event | Meaning |
 |---|---|
-| `requested` | الـ Agent طلب جلسة بالمدة والمهمة. |
-| `identity_attached` | تم ربط هوية الـ Agent بالجلسة. |
-| `browser_starting` | يتم إنشاء المتصفح وملف التعريف. |
-| `active` | الـ Agent ينفذ المهمة داخل الجلسة. |
-| `paused` | المستخدم أوقف التنفيذ مؤقتًا. |
-| `login_in_progress` | الـ Agent ينفذ مسار الدخول الخاص بالموقع. |
-| `task_running` | الموقع مفتوح والمهمة قيد التنفيذ. |
-| `stop_requested` | المستخدم أو السياسة طلبت الإيقاف. |
-| `expired` | انتهت المدة. |
-| `cleaning` | يتم إيقاف العمليات وحذف البيانات المؤقتة. |
-| `completed` | انتهت المهمة وتم تنظيف الجلسة. |
-| `failed` | حدث خطأ وتم إنهاء الجلسة. |
+| `account.requested` | The Agent requested an Agent Account or account session. |
+| `account.capabilities_discovered` | The provider declared its available operations. |
+| `account.provisioning_started` | Account provisioning started where supported. |
+| `account.provisioning_unavailable` | The provider does not expose the requested operation. |
+| `identity.attached` | An Agent identity reference was attached. |
+| `browser.started` | The isolated browser started. |
+| `browser.state_updated` | Safe browser state changed. |
+| `login.started` | A provider login path started. |
+| `login.completed` | The provider reported a completed login state. |
+| `verification.required` | A real provider challenge is present. |
+| `task.started` | The requested task started. |
+| `task.progress` | Safe task progress was recorded. |
+| `task.completed` | The task completed. |
+| `session.paused` | The user paused the session. |
+| `session.stopped` | The user or policy stopped the session. |
+| `session.expired` | The task TTL ended. |
+| `session.cleaned` | Temporary session data was cleaned. |
+| `account.revoked` | Account or provider revocation was requested. |
 
-## الأحداث المطلوبة
+## Acceptance criteria
 
-| الحدث | معناه في الفكرة |
-|---|---|
-| `session.requested` | وصول طلب جلسة من الـ Agent. |
-| `identity.attached` | ربط هوية الـ Agent بالجلسة. |
-| `browser.started` | بدء المتصفح المعزول. |
-| `browser.navigation` | انتقال الـ Agent إلى موقع. |
-| `login.started` | بدء مسار تسجيل الدخول. |
-| `login.completed` | اكتمال تسجيل الدخول حسب حالة الجلسة. |
-| `task.started` | بدء المهمة المطلوبة. |
-| `task.progress` | تحديث تقدم المهمة. |
-| `task.completed` | انتهاء المهمة. |
-| `session.paused` | إيقاف مؤقت. |
-| `session.stopped` | إيقاف كامل. |
-| `session.expired` | انتهاء الوقت. |
-| `session.cleaned` | تنظيف الجلسة والبيانات المؤقتة. |
+The product concept is aligned when a reviewer can understand that:
 
-## أمثلة استخدام أصلية
+1. The product is a Tool/Skill for an existing Agent, not a website or replacement model.
+2. The user brings the Agent, model access, Agent Key, workspace, and environment.
+3. The Agent receives an independent Agent Account and identity when a provider officially supports it.
+4. The Agent uses a real browser and real Internet inside the configured runtime.
+5. The user gives the task and duration instead of controlling every click.
+6. The Tool provides Live View, Timer, Pause, Resume, Stop, Cancel, Kill, Audit, and Cleanup.
+7. Gmail, Drive, recovery, password, payment, and account administration areas are outside the default task capability.
+8. Each Agent has an isolated profile and a persistent session when supported.
+9. The timer ends the task without automatically deleting the persistent Agent Account.
+10. Provider capabilities are discovered and unsupported operations are reported clearly.
+11. Real verification states are reported only when the provider actually shows them.
+12. Raw credentials never enter the model context, tool output, logs, or Live View.
 
-### مثال البحث والتسجيل
+## Implementation status
 
-```text
-المستخدم: استخدم هويتك لمدة ساعة، ابحث عن الخدمة المطلوبة، وسجل الدخول بالموقع وأنجز المهمة.
+The repository implements the control-plane and Account Runtime foundations: non-secret Account records, provider capability discovery, metadata-only vault references, identity references, browser profiles, persistent local profile lifecycle, browser policy, session control, Live State, verification-state recording, Claude/Codex adapters, and tests.
 
-الـ Agent: يستدعي Agent Account Google ID، يطلب جلسة ساعة، يستخدم الهوية والمتصفح، ينفذ المهمة، ثم يعرض النتيجة.
-```
-
-### مثال الإيقاف
-
-```text
-المستخدم: أوقف الجلسة الآن.
-
-الأداة: توقف الـ Agent والمتصفح والعمليات التابعة، وتسجل سبب الإيقاف.
-```
-
-### مثال انتهاء الوقت
-
-```text
-المستخدم: شغل المهمة لمدة 30 دقيقة.
-
-الأداة: تبدأ عدادًا، تعرض الوقت المتبقي، وتنهي الجلسة تلقائيًا عند انتهاء 30 دقيقة.
-```
-
-## معايير قبول الفكرة في منطقة المراجعة
-
-تُعتبر الفكرة موصوفة بالكامل عندما يستطيع المراجع فهم ما يلي بدون قراءة كود:
-
-1. أن الأداة Tool/Skill للـ Agent وليست موقعًا أو تطبيقًا مستقلًا.
-2. أن المستخدم يأتي بالـ Agent والنموذج والبيئة الخاصة به.
-3. أن الـ Agent يحصل على هوية Google حقيقية مخصصة له في التصور الأصلي.
-4. أن الـ Agent يستخدم متصفحًا حقيقيًا للبحث والتسجيل وتسجيل الدخول وتنفيذ المهمة.
-5. أن المستخدم يكتب الأمر ويحدد المدة فقط في تجربة التشغيل اليومية.
-6. أن الأداة تضيف Live View وTimer وPause وStop وCancel وKill وCleanup.
-7. أن الهوية لا تفتح Gmail أو Drive أو Recovery أو Password أو Payment أو Account Administration.
-8. أن لكل جلسة عزلًا وحالة وسجل أحداث ومدة انتهاء.
-9. أن الهوية والمتصفح مرتبطان بالجلسة وليس بالمستخدم الشخصي.
-10. أن منطقة المراجعة منفصلة عن الكود التنفيذي ولا تحتوي أسرارًا أو مسار دخول قابلًا للتشغيل.
-
-## فصل المراجعة عن التنفيذ
-
-هذا الملف يمثل **فكرة المنتج الأصلية وتصميمها المطلوب للمراجعة فقط**. أما التنفيذ الموجود في فروع المشروع الأخرى فيمثل طبقات الجلسة والتحكم والسياسات والهوية المرجعية والمتصفح المقيد التي يمكن اختبارها بأمان.
-
-أي انتقال من هذا التصور إلى تكامل فعلي مع Google أو مواقع خارجية يحتاج إلى تعريف ملكية الهوية، وتفويض المزود، ونطاقات الصلاحيات، وآلية الإلغاء، وسياسات الاحتفاظ، وعزل المتصفح، وآلية إيقاف طارئة. هذا الملف لا ينفذ تلك الخطوة ولا يحتوي على بيانات اعتماد.
+Provider-specific account creation and external website login are implemented only when the provider officially exposes the operation and a dedicated adapter is configured. The Google adapter reports unavailable operations instead of asking for the user's personal account or pretending that a local record is a Google account.

@@ -116,6 +116,8 @@ class BrowserSessionManifest:
     session_id: str
     identity_provider: str
     identity_id: str | None
+    account_id: str | None
+    persistent_profile: bool
     allowed_domains: tuple[str, ...]
     created_at: float
     expires_at: float
@@ -127,6 +129,11 @@ class BrowserSessionManifest:
     login_completed_by_manual_signal: bool = False
     cleanup_at: float | None = None
     metadata_version: int = 1
+    login_state: str = "not_started"
+    verification_state: str = "not_detected"
+    current_url: str | None = None
+    current_page: str | None = None
+    current_action: str = "idle"
 
 
 class BrowserSessionManager:
@@ -138,26 +145,42 @@ class BrowserSessionManager:
         self.root.mkdir(parents=True, exist_ok=True)
         self._processes: dict[str, subprocess.Popen] = {}
 
-    def create(self, ttl: float, allowed_domains: tuple[str, ...], identity_provider: str = "operator-attached", identity_id: str | None = None) -> BrowserSessionManifest:
+    def create(
+        self,
+        ttl: float,
+        allowed_domains: tuple[str, ...],
+        identity_provider: str = "operator-attached",
+        identity_id: str | None = None,
+        account_id: str | None = None,
+        persistent_profile: bool = False,
+    ) -> BrowserSessionManifest:
         if ttl <= 0:
             raise ValueError("ttl must be greater than zero")
         policy = BrowserPolicy(allowed_domains)
         session_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
         directory = self._directory(session_id)
         directory.mkdir(parents=True, exist_ok=False)
-        profile = directory / "profile"
-        profile.mkdir()
+        if persistent_profile:
+            if not account_id or "/" in account_id or "\\" in account_id:
+                raise ValueError("persistent profiles require a safe account_id")
+            profile = self.root / "profiles" / account_id
+            profile.mkdir(parents=True, exist_ok=True)
+        else:
+            profile = directory / "profile"
+            profile.mkdir()
         manifest = BrowserSessionManifest(
             session_id=session_id,
             identity_provider=identity_provider,
             identity_id=identity_id,
+            account_id=account_id,
+            persistent_profile=persistent_profile,
             allowed_domains=policy.allowed_domains,
             created_at=time.time(),
             expires_at=time.time() + ttl,
             profile_dir=str(profile),
         )
         self._write(manifest)
-        self._log(manifest, "browser.session_created", {"ttl_seconds": ttl, "allowed_domains": list(policy.allowed_domains), "identity_provider": identity_provider, "identity_id": identity_id})
+        self._log(manifest, "browser.session_created", {"ttl_seconds": ttl, "allowed_domains": list(policy.allowed_domains), "identity_provider": identity_provider, "identity_id": identity_id, "account_id": account_id, "persistent_profile": persistent_profile})
         return manifest
 
     def request_navigation(self, session_id: str, url: str, purpose: str = "navigate") -> BrowserDecision:
@@ -174,6 +197,9 @@ class BrowserSessionManager:
         decision = BrowserPolicy(manifest.allowed_domains).decide("https://" + domain + "/", purpose="login_handoff")
         if not decision.allowed:
             raise ValueError(f"login handoff blocked: {decision.reason}")
+        manifest.login_state = "login_required"
+        manifest.current_action = "login_handoff_required"
+        self._write(manifest)
         self._log(manifest, "browser.login_handoff_required", {"domain": domain, "operator_action": "complete login manually in the isolated browser window"})
 
     def mark_manual_login_complete(self, session_id: str, domain: str) -> None:
@@ -182,6 +208,9 @@ class BrowserSessionManager:
         if not decision.allowed:
             raise ValueError(f"login completion blocked: {decision.reason}")
         manifest.login_completed_by_manual_signal = True
+        manifest.login_state = "active"
+        manifest.verification_state = "operator_asserted_unverified"
+        manifest.current_action = "login_completed_signal"
         self._write(manifest)
         self._log(manifest, "browser.login_manual_signal", {"domain": domain, "verified": False})
 
@@ -201,8 +230,40 @@ class BrowserSessionManager:
         manifest.browser_pgid = pgid
         self._processes[session_id] = proc
         self._write(manifest)
+        manifest.current_url = decision.canonical_url
+        manifest.current_action = "browser_launched"
+        self._write(manifest)
         self._log(manifest, "browser.launch_requested", {"pid": proc.pid, "pgid": pgid, "start_url": decision.canonical_url})
         return proc.pid
+
+    def record_browser_state(self, session_id: str, url: str, page: str | None = None, action: str = "observed") -> BrowserDecision:
+        manifest = self.get(session_id)
+        decision = self.request_navigation(session_id, url)
+        if not decision.allowed:
+            return decision
+        if page is not None and (len(page) > 256 or "\n" in page or "\r" in page):
+            raise ValueError("page label must be a short single-line value")
+        if len(action) > 256 or "\n" in action or "\r" in action:
+            raise ValueError("action must be a short single-line value")
+        manifest.current_url = decision.canonical_url
+        manifest.current_page = page
+        manifest.current_action = action
+        self._write(manifest)
+        self._log(manifest, "browser.state_updated", {"url": decision.canonical_url, "page": page, "action": action})
+        return decision
+
+    def record_verification_state(self, session_id: str, state: str, domain: str) -> None:
+        allowed = {"not_detected", "email_required", "phone_required", "otp_required", "mfa_required", "captcha_detected", "provider_blocked", "completed"}
+        if state not in allowed:
+            raise ValueError("unsupported verification state")
+        manifest = self.get(session_id)
+        decision = BrowserPolicy(manifest.allowed_domains).decide("https://" + domain + "/", purpose="login_handoff")
+        if not decision.allowed:
+            raise ValueError(f"verification state blocked: {decision.reason}")
+        manifest.verification_state = state
+        manifest.current_action = "verification_state_detected"
+        self._write(manifest)
+        self._log(manifest, "browser.verification_state", {"domain": domain, "state": state})
 
     def wait_until_expired(self, session_id: str, poll_seconds: float = 0.25) -> None:
         manifest = self.get(session_id)
@@ -222,14 +283,17 @@ class BrowserSessionManager:
                 proc.kill()
                 proc.wait(timeout=2)
         profile = Path(manifest.profile_dir).resolve()
-        if profile.parent == self._directory(session_id).resolve() and profile.name == "profile" and profile.exists():
+        profile_deleted = False
+        if not manifest.persistent_profile and profile.parent == self._directory(session_id).resolve() and profile.name == "profile" and profile.exists():
             shutil.rmtree(profile)
+            profile_deleted = True
         manifest.status = "cleaned"
         manifest.cleanup_at = time.time()
         manifest.browser_pid = None
         manifest.browser_pgid = None
+        manifest.current_action = "session_cleaned"
         self._write(manifest)
-        self._log(manifest, "browser.session_cleanup", {"reason": reason, "profile_deleted": True})
+        self._log(manifest, "browser.session_cleanup", {"reason": reason, "profile_deleted": profile_deleted, "persistent_profile_retained": manifest.persistent_profile})
 
     def get(self, session_id: str) -> BrowserSessionManifest:
         if not session_id or "/" in session_id or "\\" in session_id or session_id in {".", ".."}:
@@ -237,7 +301,10 @@ class BrowserSessionManager:
         path = self._directory(session_id) / "manifest.json"
         if not path.exists():
             raise FileNotFoundError(f"browser session not found: {session_id}")
-        return BrowserSessionManifest(**json.loads(path.read_text(encoding="utf-8")))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data.setdefault("account_id", None)
+        data.setdefault("persistent_profile", False)
+        return BrowserSessionManifest(**data)
 
     def _directory(self, session_id: str) -> Path:
         return self.root / session_id

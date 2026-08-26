@@ -1,40 +1,68 @@
-# Agent Account Google ID build report
+# Agent Account Google ID — Build Report
+
+## Product
+
+**Agent Account Google ID — Give Your AI an Identity** is a local-first Account Runtime and control plane around a user-owned AI Agent. The user brings the Agent, model access, Agent Key, workspace, and environment. The Tool adds an Agent Account record, identity reference, browser profile, persistent session, capabilities, timer, Live State, controls, policy checks, audit events, and cleanup.
 
 ## Implemented
 
-The repository now contains a dependency-free Python 3.10+ local control plane around a user-owned AI agent. The original supervisor provides a TTL timer, dedicated POSIX process group, best-effort group termination, POSIX pause/resume, a redacted JSONL event log, local `watch`, workspace/sensitive-path checks, command guardrails, and Claude Code/Codex adapters.
+The original Supervisor provides a TTL timer, dedicated POSIX process group, best-effort process-group termination, POSIX pause/resume, a redacted JSONL event log, local watch, workspace and sensitive-path checks, command guardrails, and Claude Code/Codex adapters.
 
-The new identity-session safety layer adds an `IdentityRef`/`IdentityStore` model that stores non-secret provider metadata only. The Google adapter accepts a provider subject and safe verification metadata; it does not create accounts, store tokens, import cookies, or handle passwords. The CLI also includes a one-time installed-app Google OAuth flow using loopback PKCE and `openid email profile` identity scopes; its short-lived token is used in memory to obtain metadata and is not persisted.
+The Account Runtime adds `AgentAccount`, `AccountProvisioner`, `LocalManagedAccountProvisioner`, `GoogleProvider`, `ProviderCapabilities`, `ProviderOperationUnavailable`, and `AccountVault`. Account records contain safe metadata, opaque handles, lifecycle state, identity references, provider state, and browser-profile references. The vault accepts provider secrets through an internal `put_secret` boundary, keeps raw values process-bound, and exposes only opaque references and safe metadata. Raw values are never written to disk, returned by public metadata methods, or sent to the Agent.
 
-The new browser layer adds an ephemeral profile manifest, explicit HTTPS domain allowlist, blocking for embedded URL credentials, localhost/private/link-local/metadata/reserved targets, sensitive Google services, and recovery/password/challenge paths. It supports local URL decisions, Chromium-compatible launch, TTL waiting, process cleanup, profile deletion, and a retained non-secret audit trail. The `run` command can now create this context before the Agent starts, validate the attached identity reference, pass only `AGENTGUARD_*` metadata to the child, and clean the browser context when the Agent exits or TTL expires.
+The Core Runtime adds a separate `ProviderAdapter`, `ProviderSession`, `AgentIdentity`, `AccountStore`, `AccountRuntime`, and `CorePath`. `AccountRuntime` orchestrates Agent Key -> Agent Identity -> Account Provisioning -> Credential Vault -> Browser Profile -> Persistent Browser Session -> Provider Session -> Agent Action -> Kill -> Restart.
 
-The README, Skill, integration guide, supported-agent matrix, and threat model now describe the product as **Agent Account Google ID — Give Your AI an Identity** while preserving the accurate `agentguard` command name and clear security boundaries.
+The provider model exposes capability discovery for account creation, identity initialization, credential initialization, browser sessions, persistent sessions, verification, recovery, rotation, and revocation. The Google provider reports third-party account provisioning as unavailable when the provider does not expose that operation. It does not ask for a user's personal account as a silent fallback.
+
+The browser layer supports isolated ephemeral profiles and persistent profiles attached to an Agent Account. A task TTL ends the current task and browser process without deleting a persistent Account record or persistent profile. Browser manifests now include account ID, persistence state, login state, verification state, current URL, current page, and current action.
+
+The browser policy enforces HTTPS, explicit domain allowlists, blocked sensitive Google areas, credentials-in-URL blocking, and private/local/link-local/metadata host blocking. The browser runtime can record safe browser state and real verification states such as email, phone, OTP, MFA, CAPTCHA, provider-blocked, or completed. It never bypasses a challenge.
+
+The CLI includes:
+
+```text
+agent-account-google-id account create
+agent-account-google-id account show
+agent-account-google-id account revoke
+agent-account-google-id account capabilities
+agent-account-google-id account sites
+agent-account-google-id account vault-reference
+agent-account-google-id browser create --account-id ... --persistent-profile
+agent-account-google-id browser state
+agent-account-google-id browser verification
+agent-account-google-id run --account-id ... --persistent-profile ...
+```
+
+The product-facing executable is `agent-account-google-id`. The legacy `agentguard` executable remains as a compatibility alias. The package module directory remains `agentguard` so existing imports and integrations do not break.
+
+The repository documentation is in English and uses the product name: README, Skill, integration guide, full concept specification, identity/browser guide, supported-site matrix, threat model, and build report.
 
 ## Verification performed
 
 | Check | Result |
 |---|---|
-| Unit tests | 13 passed |
-| Python compilation | Passed for `agentguard` and `adapters` |
-| Existing supervisor TTL/redaction/hook/Codex tests | Passed |
-| Browser URL policy tests | Passed: HTTPS, allowlist, credentials-in-URL, private/local/metadata, sensitive Google targets |
-| Browser session lifecycle tests | Passed: isolated profile, manual handoff signal, cleanup, TTL expiry |
-| Identity metadata tests | Passed: Google reference, secret-field rejection, revoke |
-| Automatic Agent context smoke | Passed: identity validation, non-secret environment handoff, automatic profile cleanup |
-| Google OAuth unit tests | Passed: loopback-only callback, identity scopes only, safe metadata excludes tokens |
+| Unit and lifecycle tests | 23 passed |
+| Python compilation | Passed for `agentguard`, `adapters`, and tests |
+| Existing Supervisor tests | Passed |
+| Browser URL policy tests | Passed |
+| Browser lifecycle tests | Passed |
+| Persistent profile retention test | Passed |
+| Account lifecycle test | Passed |
+| `test_agent_account_end_to_end_lifecycle` | Passed: Agent Key -> Identity -> Account -> Vault -> Browser Profile -> Provider Session -> Action -> Kill -> Restart -> same persistent Account |
+| Account Vault secret-field rejection | Passed |
+| Google provider capability test | Passed |
+| Capability wildcard rejection | Passed |
+| CLI Account/Browser smoke tests | Passed after fixing Browser State parser collision |
+| Editable package installation | Passed earlier for product command |
+| `agent-account-google-id --help` | Passed; includes Account and Browser commands |
 | `git diff --check` | Passed |
-| External design review attempt | ChatGPT returned `429 insufficient_quota`; Gemini returned `503 model unavailable` on this run. No secrets were sent. |
 
-## Deliberately excluded
+## Deliberately unavailable provider operations
 
-The repository does not create or distribute Google accounts, operate a shared consumer-account pool, import cookies, retrieve passwords or recovery codes, bypass MFA/CAPTCHA, automate arbitrary-site login, access Gmail/Drive/payments/admin/recovery settings, provide a hosted remote browser, or claim that a manual login signal is verified. The provider identity must be owned/authorized outside this package.
+The repository does not claim to create or distribute consumer Google accounts, operate a shared account pool, import cookies, retrieve passwords or recovery codes, bypass MFA/CAPTCHA, or provide unrestricted cross-site login. The Google provider reports unavailable operations clearly. Provider-managed secrets must remain in a provider-approved external boundary. The end-to-end test uses `TestProviderAdapter`, an adapter implemented outside the Core Runtime with synthetic provider state; it does not contact Google or an external website.
 
 ## Known limitations
 
-Command matching is a guardrail, not a complete sandbox. Browser URL decisions are a policy layer, not a browser extension, proxy, or OS egress firewall. A shell script, interpreter, encoding, alias, detached process, or privileged process can bypass Python-level checks. Strong isolation requires a user-owned container or VM plus OS-level egress controls.
+Command matching is a guardrail, not a complete sandbox. Browser URL decisions are a policy layer, not a browser extension, proxy, or OS egress firewall. Strong isolation requires a user-controlled container or VM plus OS-level egress controls.
 
-The viewer remains local text/JSONL and is not a remote video stream. Browser launch depends on a Chromium-compatible executable in the user's environment. The `browser login-complete` command is an operator assertion with `verified: false`; it does not inspect browser state or contact a provider.
-
-## Deployment note
-
-The current branch is feature work based on `origin/main`. It must be reviewed and explicitly approved before merging into `main`.
+The current Live View is local and text/event based. It can expose safe browser state, but it is not a hosted remote video stream. Browser launch requires a Chromium-compatible executable in the user's environment. Persistent browser profiles require an environment with suitable local storage and one active session per profile.
