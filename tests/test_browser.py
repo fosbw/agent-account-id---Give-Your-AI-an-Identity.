@@ -73,6 +73,40 @@ def test_browser_session_isolated_profile_and_cleanup(tmp_path: Path):
     assert "browser.session_cleanup" in kinds
 
 
+def test_verification_handoff_waits_for_user_then_requests_recheck(tmp_path: Path):
+    manager = BrowserSessionManager(tmp_path / "browser")
+    manifest = manager.create(60, ("example.com",), identity_provider="test", identity_id="identity-1", account_id="acct-1")
+
+    pending = manager.begin_verification_handoff(manifest.session_id, "otp_required", "example.com")
+    assert pending["status"] == "awaiting_user_verification"
+    assert pending["verification_state"] == "otp_required"
+    saved = manager.get(manifest.session_id)
+    assert saved.verification_state == "otp_required"
+    assert saved.current_action == "verification_handoff_required"
+
+    resumed = manager.resume_after_verification(manifest.session_id, "example.com")
+    assert resumed == {
+        "session_id": manifest.session_id,
+        "domain": "example.com",
+        "verification_state": "completed",
+        "status": "resume_requested",
+        "authentication_recheck_required": True,
+    }
+    saved = manager.get(manifest.session_id)
+    assert saved.verification_state == "completed"
+    assert saved.current_action == "verification_handoff_resume_requested"
+    event_text = (tmp_path / "browser" / manifest.session_id / "events.jsonl").read_text()
+    assert "code" not in event_text.casefold()
+    assert "otp_value" not in event_text.casefold()
+
+
+def test_verification_handoff_rejects_resume_without_pending_challenge(tmp_path: Path):
+    manager = BrowserSessionManager(tmp_path / "browser")
+    manifest = manager.create(60, ("example.com",))
+    with pytest.raises(ValueError, match="no pending verification"):
+        manager.resume_after_verification(manifest.session_id, "example.com")
+
+
 def test_launch_tracks_process_and_cleanup_stops_it(tmp_path: Path):
     manager = BrowserSessionManager(tmp_path / "browser")
     manifest = manager.create(30, ("example.com",))

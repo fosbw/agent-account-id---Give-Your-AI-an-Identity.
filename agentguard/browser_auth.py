@@ -14,6 +14,7 @@ from .accounts import AccountError, AccountVault
 from .browser import BrowserSessionManager
 from .provider import ProviderSession
 from .redaction import Redactor
+from .verification import VerificationRequired
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,9 @@ class BrowserAuthenticationRuntime:
                 action="authenticated",
                 verification_state="completed",
             )
+        except VerificationRequired as exc:
+            self.browser_manager.begin_verification_handoff(request.session_id, exc.state, request.target)
+            raise
         except Exception:
             self.browser_manager.record_login_state(request.session_id, "failed", request.target)
             raise

@@ -317,6 +317,43 @@ class BrowserSessionManager:
         self._write(manifest)
         self._log(manifest, "browser.verification_state", {"domain": domain, "state": state})
 
+    def begin_verification_handoff(self, session_id: str, state: str, domain: str) -> dict[str, object]:
+        challenge_states = {"email_required", "phone_required", "otp_required", "mfa_required", "captcha_detected", "provider_blocked"}
+        if state not in challenge_states:
+            raise ValueError("verification handoff requires a detected provider challenge")
+        self.record_verification_state(session_id, state, domain)
+        manifest = self.get(session_id)
+        manifest.current_action = "verification_handoff_required"
+        self._write(manifest)
+        self._log(manifest, "browser.verification_handoff_required", {"domain": domain, "state": state, "user_action": "complete verification in the isolated browser, then send a resume signal"})
+        return {
+            "session_id": session_id,
+            "domain": domain,
+            "verification_state": state,
+            "status": "awaiting_user_verification",
+            "user_action": "complete the provider verification in the browser, then request resume",
+        }
+
+    def resume_after_verification(self, session_id: str, domain: str) -> dict[str, object]:
+        challenge_states = {"email_required", "phone_required", "otp_required", "mfa_required", "captcha_detected", "provider_blocked"}
+        manifest = self.get(session_id)
+        if manifest.verification_state not in challenge_states:
+            raise ValueError("no pending verification handoff exists")
+        decision = BrowserPolicy(manifest.allowed_domains).decide("https://" + domain + "/", purpose="login_handoff")
+        if not decision.allowed:
+            raise ValueError(f"verification resume blocked: {decision.reason}")
+        manifest.verification_state = "completed"
+        manifest.current_action = "verification_handoff_resume_requested"
+        self._write(manifest)
+        self._log(manifest, "browser.verification_handoff_resume_requested", {"domain": domain, "recheck_required": True})
+        return {
+            "session_id": session_id,
+            "domain": domain,
+            "verification_state": "completed",
+            "status": "resume_requested",
+            "authentication_recheck_required": True,
+        }
+
     def wait_until_expired(self, session_id: str, poll_seconds: float = 0.25) -> None:
         manifest = self.get(session_id)
         while time.time() < manifest.expires_at:

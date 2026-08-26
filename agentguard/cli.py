@@ -236,6 +236,11 @@ def build_parser() -> argparse.ArgumentParser:
     browser_verification.add_argument("domain")
     browser_verification.add_argument("state", choices=("not_detected", "email_required", "phone_required", "otp_required", "mfa_required", "captcha_detected", "provider_blocked", "completed"))
 
+    browser_verification_resume = browser_sub.add_parser("verification-resume", help="request safe resume after user completes provider verification")
+    browser_verification_resume.add_argument("--browser-dir", type=Path, default=None)
+    browser_verification_resume.add_argument("session_id")
+    browser_verification_resume.add_argument("domain")
+
     browser_watch = browser_sub.add_parser("watch", help="follow local browser events")
     browser_watch.add_argument("--browser-dir", type=Path, default=None)
     browser_watch.add_argument("session_id")
@@ -709,6 +714,9 @@ def cmd_browser(args) -> int:
     if args.browser_action == "verification":
         manager.record_verification_state(args.session_id, args.state, args.domain)
         print(json.dumps({"ok": True, "event": "browser.verification_state", "domain": args.domain, "state": args.state}, ensure_ascii=False))
+        return 0
+    if args.browser_action == "verification-resume":
+        print(json.dumps(manager.resume_after_verification(args.session_id, args.domain), ensure_ascii=False, indent=2))
         return 0
     if args.browser_action == "cleanup":
         manager.cleanup(args.session_id, args.reason)

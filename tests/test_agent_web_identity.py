@@ -114,6 +114,32 @@ def test_agent_web_identity_enforces_explicit_permissions(tmp_path: Path) -> Non
         facade.execute(handle, session_id, WebActionRequest("read"))
 
 
+def test_agent_web_identity_chat_event_only_appears_for_real_challenge(tmp_path: Path) -> None:
+    facade, _browser, session_id, handle = _facade(tmp_path)
+
+    assert facade.verification_chat_event(handle, session_id, "example.test") is None
+
+    facade.browser.begin_verification_handoff(session_id, "otp_required", "example.test")
+    event = facade.verification_chat_event(handle, session_id, "example.test")
+    assert event is not None
+    assert event["type"] == "verification_required"
+    assert event["verification_state"] == "otp_required"
+    assert "Do not send the verification code here" in str(event["message"])
+    assert "123456" not in str(event)
+
+
+def test_agent_web_identity_chat_resume_accepts_done_not_verification_code(tmp_path: Path) -> None:
+    facade, _browser, session_id, handle = _facade(tmp_path)
+    facade.browser.begin_verification_handoff(session_id, "mfa_required", "example.test")
+
+    with pytest.raises(AccountError, match="verification codes are not accepted"):
+        facade.resume_verification_from_chat(handle, session_id, "example.test", "123456")
+
+    resumed = facade.resume_verification_from_chat(handle, session_id, "example.test", "Done")
+    assert resumed["status"] == "resume_requested"
+    assert resumed["authentication_recheck_required"] is True
+
+
 def test_agent_web_identity_rejects_wrong_browser_session(tmp_path: Path) -> None:
     facade, _browser, session_id, handle = _facade(tmp_path)
     other_manager = BrowserSessionManager(tmp_path / "other-browser")

@@ -174,6 +174,15 @@ agent-account-google-id browser verification \
   <browser-session-id> example.com phone_required
 ```
 
+When a real provider challenge is detected, the chat-facing handoff emits a message only at that point. The message tells the user to complete the provider step in the browser and reply `Done` in the Agent chat. The chat bridge accepts only that completion signal, never the verification code; the provider authentication state must be rechecked before work continues.
+
+```bash
+agent-account-google-id browser verification-resume \
+  <browser-session-id> example.com
+```
+
+Supported handoff states include `email_required`, `phone_required`, `otp_required`, `mfa_required`, `captcha_detected`, and `provider_blocked`. The tool does not read, store, forward, or bypass verification codes, MFA, CAPTCHA, phone checks, or anti-bot challenges. No handoff message is emitted when the session has no pending provider challenge.
+
 Observe the local redacted event stream:
 
 ```bash

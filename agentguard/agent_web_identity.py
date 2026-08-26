@@ -8,6 +8,7 @@ from .browser import BrowserSessionManager
 from .runtime import AccountStore, AgentIdentity
 from .security import SecurityBoundary
 from .web_runtime import SafeWebResult, UniversalWebRuntime, WebActionRequest
+from .verification import ChatVerificationHandoff
 
 
 _OPERATION_PERMISSIONS = {
@@ -75,6 +76,27 @@ class AgentWebIdentity:
         self.identities.save(aggregate)
         return self.metadata()
 
+    def verification_chat_event(self, account_handle: str, session_id: str, domain: str) -> dict[str, object] | None:
+        self._authorize_session(account_handle, session_id)
+        event = ChatVerificationHandoff(self.browser).event_for_session(session_id, domain)
+        return event.to_dict() if event else None
+
+    def resume_verification_from_chat(self, account_handle: str, session_id: str, domain: str, message: str) -> dict[str, object]:
+        self._authorize_session(account_handle, session_id)
+        return ChatVerificationHandoff(self.browser).resume_from_chat(session_id, domain, message)
+
+    def _authorize_session(self, account_handle: str, session_id: str):
+        validate_account_handle(account_handle)
+        account = self.accounts.find_by_handle(account_handle)
+        self.security.authorize_account(self.identity, account)
+        try:
+            manifest = self.browser.get(session_id)
+        except (FileNotFoundError, ValueError):
+            raise AccountError("Agent is not authorized to use this browser session") from None
+        if manifest.identity_id != self.identity.identity_id or manifest.account_id != account.account_id:
+            raise AccountError("Agent is not authorized to use this browser session")
+        return manifest
+
     def execute(self, account_handle: str, session_id: str, request: WebActionRequest) -> dict[str, object]:
         validate_account_handle(account_handle)
         aggregate = self.identities.assert_account_owner(self.identity.identity_id, account_handle)
@@ -83,12 +105,7 @@ class AgentWebIdentity:
         required = _OPERATION_PERMISSIONS[request.operation]
         if required not in aggregate.permissions and "web.*" not in aggregate.permissions:
             raise AccountError(f"permission required: {required}")
-        try:
-            manifest = self.browser.get(session_id)
-        except (FileNotFoundError, ValueError) as exc:
-            raise AccountError("Agent is not authorized to use this browser session") from None
-        if manifest.identity_id != self.identity.identity_id or manifest.account_id != account.account_id:
-            raise AccountError("Agent is not authorized to use this browser session")
+        manifest = self._authorize_session(account_handle, session_id)
         result: SafeWebResult = self.web.execute(session_id, request)
         aggregate.add_activity(f"web.{request.operation}", session_id, "completed")
         self.identities.save(aggregate)

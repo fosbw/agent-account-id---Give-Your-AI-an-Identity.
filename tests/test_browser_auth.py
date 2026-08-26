@@ -11,6 +11,7 @@ from agentguard.browser_auth import (
     DemoLoginAdapter,
     LoginRequest,
 )
+from agentguard.verification import VerificationRequired
 
 
 class FakeBrowserAutomation:
@@ -130,6 +131,37 @@ def test_browser_auth_runtime_keeps_credentials_out_of_safe_state(tmp_path: Path
     assert saved_manifest.verification_state == "completed"
     assert saved_manifest.current_url.endswith("/secure")
     assert saved_manifest.current_action == "authenticated"
+
+
+class ChallengeLoginAdapter:
+    provider = "challenge-provider"
+    target = "the-internet.herokuapp.com"
+
+    def login(self, request, vault, browser):
+        raise VerificationRequired("otp_required")
+
+
+def test_browser_auth_challenge_creates_verification_handoff_state(tmp_path: Path):
+    account_handle = "agent_account://challenge-provider/acct-challenge"
+    manager = BrowserSessionManager(tmp_path / "browser")
+    manifest = manager.create(
+        ttl=60,
+        allowed_domains=("the-internet.herokuapp.com",),
+        identity_provider="challenge-provider",
+        identity_id="identity-challenge",
+        account_id="acct-challenge",
+    )
+
+    with pytest.raises(VerificationRequired):
+        BrowserAuthenticationRuntime(manager, AccountVault(tmp_path / "vault")).login(
+            _make_request(manifest, account_handle), ChallengeLoginAdapter(), FakeBrowserAutomation()
+        )
+
+    saved = manager.get(manifest.session_id)
+    assert saved.verification_state == "otp_required"
+    assert saved.current_action == "verification_handoff_required"
+    assert saved.login_state == "authenticating"
+    assert "otp" in (manager.begin_verification_handoff(manifest.session_id, "otp_required", "the-internet.herokuapp.com")["verification_state"])
 
 
 def test_browser_auth_failure_marks_login_failed_without_provider_session(tmp_path: Path):

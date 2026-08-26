@@ -57,7 +57,7 @@ The repository documentation is in English and uses the product name: README, Sk
 
 | Check | Result |
 |---|---|
-| Unit and lifecycle tests | **47 passed** |
+| Unit and lifecycle tests | **52 passed** |
 | Python compilation | Passed for `agentguard`, `adapters`, tests, and live-validation scripts |
 | Existing Supervisor tests | Passed |
 | Browser URL policy tests | Passed |
@@ -75,9 +75,12 @@ The repository documentation is in English and uses the product name: README, Sk
 | Provider capability matrix test | Passed: normalized `CREATE_ACCOUNT`, `INITIALIZE_ACCOUNT`, `AUTHENTICATE`, `PERSIST_SESSION`, `REFRESH_SESSION`, `REVOKE_SESSION`, `ROTATE_CREDENTIAL`, and `VERIFY_STATE` keys |
 | Agent Identity Aggregate tests | Passed: safe graph persistence, ownership rejection, safe session metadata, permissions, activity, and memory references |
 | Security Boundary tests | Passed: nested password/token/secret/cookie/bearer redaction, Browser Authentication safe page-label redaction, cross-Agent account rejection, and screenshot blocking during auth/credential phases |
-| Agent Web Identity integration tests | Passed: safe read/action result, explicit permission enforcement, activity recording, and browser-session ownership rejection |
+| Agent Web Identity integration tests | Passed: safe read/action result, explicit permission enforcement, activity recording, browser-session ownership rejection, challenge-only chat event, and Done-only resume signal |
+| Chat Verification Handoff tests | Passed: no message without a pending challenge, safe challenge message when detected, verification-code rejection, and provider recheck-required resume state |
 | Universal Web Runtime live test | **Passed live** in isolated Chrome: `https://example.com/` navigate plus rendered-page read; output contained safe page text only |
 | Agent Web Identity CLI smoke test | Passed: parser and help expose `permissions`, `show`, and `action` facade commands |
+| Verification handoff CLI | Passed: `browser verification-resume` exposes only a safe resume signal and never accepts a verification code |
+| Chat Verification Handoff | Passed: no chat event without a real pending challenge, safe challenge event when detected, rejection of verification codes, `Done` resume signal, and provider authentication recheck requirement |
 | Account Provisioning unit tests | Passed: deterministic naming, external-account/Vault/Profile linkage, safe authenticated action, Kill preservation, and Provider Session revocation |
 | Real second-provider Full Flow | **Passed live**: AutomationExercise signup -> external account creation -> logout -> Vault-backed login -> authenticated home-page read -> Kill -> new browser process -> same Account/Profile -> authenticated action without credential injection |
 | Generic-runtime comparison | **Passed live across two different providers**: the generic Provisioning/Authentication/Profile/Session lifecycle was reused; provider-specific code remained in each adapter's normal form handling and success markers |

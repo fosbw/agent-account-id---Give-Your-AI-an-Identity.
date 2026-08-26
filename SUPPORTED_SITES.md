@@ -156,6 +156,15 @@ agent-account-google-id web-identity action \
 
 The facade returns opaque identity/account/session handles and redacted web results only. It accepts separate `web.navigate`, `web.read`, and `web.interact` permissions. Passwords, cookies, tokens, raw Provider Session data, and screenshot OCR are not facade outputs. Known credential-entry and authentication states block screenshot capture; this conservative policy does not claim perfect pixel-level detection for arbitrary images.
 
+### Chat Verification Handoff
+
+When a real provider challenge is detected, the Agent-facing chat bridge emits a safe `verification_required` event containing only the challenge type and a message telling the user to complete verification in the provider browser. No event is emitted when there is no pending challenge. The user can reply `Done`, which becomes a resume signal; verification codes are never accepted, stored, forwarded, or placed in the chat context, and authentication must be rechecked by the provider adapter.
+
+```bash
+agent-account-google-id browser verification-resume \\
+  <browser-session-id> example.com
+```
+
 ## Current CLI examples
 
 ```bash
@@ -166,6 +175,7 @@ agent-account-google-id account create --agent-id research-agent --display-name 
 agent-account-google-id browser create --ttl 3600 --allow-domain example.com --persistent-profile --account-id <account-id>
 agent-account-google-id browser state <browser-session-id> --url https://example.com/ --page "Home" --action "Reading"
 agent-account-google-id browser verification <browser-session-id> example.com phone_required
+agent-account-google-id browser verification-resume <browser-session-id> example.com
 agent-account-google-id browser authenticate <browser-session-id> \\
   --account-handle agent_account://demo-site/acct-demo \\
   --target the-internet.herokuapp.com \\
