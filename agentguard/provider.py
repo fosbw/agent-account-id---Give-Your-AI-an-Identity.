@@ -84,6 +84,7 @@ class TestProviderAdapter:
         return ProviderCapabilities(
             provider=self.provider,
             account_creation="supported_test_adapter",
+            authentication="supported_test_adapter",
             identity_initialization="supported_test_adapter",
             credential_initialization="supported_internal_vault",
             browser_session="supported_test_adapter",

@@ -39,7 +39,7 @@ The Agent Web Identity facade is the product surface above that mechanics layer.
 
 ## What counts as a supported login path
 
-A service is eligible for an adapter when it officially exposes OAuth, OpenID Connect, SSO, or an API that the Agent can use. The adapter must declare its scopes, lifecycle, verification behavior, revocation method, retention, and acceptable-use requirements.
+A service is eligible for an adapter when it officially exposes OAuth, OpenID Connect, SSO, or an API that the Agent can use. The adapter must declare its scopes, lifecycle, verification behavior, revocation method, retention, and acceptable-use requirements. The core capability contract uses `CREATE_ACCOUNT`, `INITIALIZE_ACCOUNT`, `AUTHENTICATE`, `PERSIST_SESSION`, `REFRESH_SESSION`, `REVOKE_SESSION`, `ROTATE_CREDENTIAL`, and `VERIFY_STATE`; each provider reports its own supported, unavailable, or provider-managed state for every operation.
 
 A site that only opens in Chrome is not automatically supported. A Google sign-in button alone does not create a universal credential or session bridge. If a service requires a provider-specific account, the matching provider adapter must be used.
 

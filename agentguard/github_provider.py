@@ -89,6 +89,7 @@ class GitHubProviderAdapter:
         return ProviderCapabilities(
             provider=self.provider,
             account_creation="unavailable_external_account_creation",
+            authentication="supported_official_api",
             identity_initialization="supported_via_github_app_or_oauth",
             credential_initialization="supported_via_internal_vault_boundary",
             browser_session="supported_with_external_runtime",

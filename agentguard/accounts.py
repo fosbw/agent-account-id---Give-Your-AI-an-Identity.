@@ -49,6 +49,19 @@ class ProviderCapabilities:
     recovery: str
     credential_rotation: str
     revocation: str
+    authentication: str = "provider_adapter"
+
+    def capability_matrix(self) -> dict[str, str]:
+        return {
+            "CREATE_ACCOUNT": self.account_creation,
+            "INITIALIZE_ACCOUNT": self.identity_initialization,
+            "AUTHENTICATE": self.authentication,
+            "PERSIST_SESSION": self.persistent_session,
+            "REFRESH_SESSION": self.recovery,
+            "REVOKE_SESSION": self.revocation,
+            "ROTATE_CREDENTIAL": self.credential_rotation,
+            "VERIFY_STATE": self.verification,
+        }
 
     def safe_metadata(self) -> dict[str, str]:
         return asdict(self)
@@ -233,6 +246,7 @@ class GoogleProvider:
         return ProviderCapabilities(
             provider=self.provider,
             account_creation="unavailable",
+            authentication="supported_via_oauth",
             identity_initialization="supported_via_oauth",
             credential_initialization="provider_managed_only",
             browser_session="supported_with_external_runtime",
@@ -308,6 +322,7 @@ class LocalManagedAccountProvisioner:
         return ProviderCapabilities(
             provider=self.provider,
             account_creation="supported_local_only",
+            authentication="supported_local_only",
             identity_initialization="supported_reference_only",
             credential_initialization="not_accepted",
             browser_session="supported",

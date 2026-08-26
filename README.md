@@ -279,7 +279,7 @@ CREATE
   -> DESTROY LOCAL SESSION DATA
 ```
 
-The provider declares its real capabilities. The Google provider in this repository reports third-party account provisioning as unavailable rather than asking for the user's personal account. `ExpandTestingProvider` declares browser account creation and internal credential initialization as supported only for its public practice environment; its process-bound session recovery is explicitly limited. Provider-managed credential operations remain outside this local process.
+The provider declares its real capabilities through a normalized matrix: `CREATE_ACCOUNT`, `INITIALIZE_ACCOUNT`, `AUTHENTICATE`, `PERSIST_SESSION`, `REFRESH_SESSION`, `REVOKE_SESSION`, `ROTATE_CREDENTIAL`, and `VERIFY_STATE`. The Google provider in this repository reports third-party account provisioning as unavailable rather than asking for the user's personal account. `ExpandTestingProvider` declares browser account creation and internal credential initialization as supported only for its public practice environment; its process-bound session recovery is explicitly limited. Provider-managed credential operations remain outside this local process.
 
 ## Security boundary
 

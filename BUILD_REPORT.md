@@ -57,7 +57,7 @@ The repository documentation is in English and uses the product name: README, Sk
 
 | Check | Result |
 |---|---|
-| Unit and lifecycle tests | **46 passed** |
+| Unit and lifecycle tests | **47 passed** |
 | Python compilation | Passed for `agentguard`, `adapters`, tests, and live-validation scripts |
 | Existing Supervisor tests | Passed |
 | Browser URL policy tests | Passed |
@@ -72,6 +72,7 @@ The repository documentation is in English and uses the product name: README, Sk
 | Editable package installation | Passed earlier for product command |
 | `agent-account-google-id --help` | Passed; includes Account and Browser commands |
 | Browser Authentication unit tests | Passed: Vault isolation, form detection, safe state, Provider Session persistence, failure state, Kill/Cleanup revocation, and same-profile restart |
+| Provider capability matrix test | Passed: normalized `CREATE_ACCOUNT`, `INITIALIZE_ACCOUNT`, `AUTHENTICATE`, `PERSIST_SESSION`, `REFRESH_SESSION`, `REVOKE_SESSION`, `ROTATE_CREDENTIAL`, and `VERIFY_STATE` keys |
 | Agent Identity Aggregate tests | Passed: safe graph persistence, ownership rejection, safe session metadata, permissions, activity, and memory references |
 | Security Boundary tests | Passed: nested password/token/secret/cookie/bearer redaction, Browser Authentication safe page-label redaction, cross-Agent account rejection, and screenshot blocking during auth/credential phases |
 | Agent Web Identity integration tests | Passed: safe read/action result, explicit permission enforcement, activity recording, and browser-session ownership rejection |

@@ -29,6 +29,7 @@ class AutomationExerciseProvider:
         return ProviderCapabilities(
             provider=self.provider,
             account_creation="supported_public_test_site_browser",
+            authentication="supported_real_browser",
             identity_initialization="supported_deterministic",
             credential_initialization="supported_internal_vault",
             browser_session="supported_real_browser",
