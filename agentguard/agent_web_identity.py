@@ -1,156 +1,135 @@
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
-import json
+from dataclasses import dataclass
 
-from agentguard.agent_web_identity import AgentWebIdentity
-from agentguard.accounts import AccountError
-from agentguard.browser import BrowserSessionManager
-from agentguard.runtime import AgentIdentity
-from agentguard.web_runtime import UniversalWebRuntime, WebActionRequest
-
-
-@pytest.fixture
-def session_id():
-    return "test-session-123"
+from .accounts import AccountError, validate_account_handle
+from .agent_identity import AgentIdentityStore
+from .browser import BrowserSessionManager
+from .runtime import AccountStore, AgentIdentity
+from .security import SecurityBoundary
+from .web_runtime import SafeWebResult, UniversalWebRuntime, WebActionRequest
+from .verification import ChatVerificationHandoff
 
 
-@pytest.fixture
-def domain():
-    return "google.com"
+_OPERATION_PERMISSIONS = {
+    "navigate": "web.navigate",
+    "read": "web.read",
+    "click": "web.interact",
+    "fill": "web.interact",
+    "select": "web.interact",
+    "submit": "web.interact",
+}
 
 
-@pytest.fixture
-def account_handle():
-    return "agent_account://local/test-account"
+@dataclass
+class AgentWebIdentity:
+    """The planner-facing identity facade; it owns no planning or raw secrets."""
 
+    identity: AgentIdentity
+    identities: AgentIdentityStore
+    accounts: AccountStore
+    browser: BrowserSessionManager
+    web: UniversalWebRuntime
+    security: SecurityBoundary
 
-@pytest.fixture
-def facade(tmp_path):
-    # Create test runtime
-    root = tmp_path / "agentguard"
-    root.mkdir(parents=True, exist_ok=True)
-    
-    identity = AgentIdentity(
-        identity_id="test-identity",
-        agent_id="test-agent",
-        account_handles=set(),
-        browser_profiles=set(),
-        sessions=set(),
-        permissions={"web.*"},
-        activity_history=[],
-        memory_refs=[],
-        created_at=0.0,
-        last_seen_at=0.0,
-        lifetime_state="active"
-    )
-    
-    browser = BrowserSessionManager(root / "browser")
-    web = UniversalWebRuntime(root / "web")
-    
-    # Create a test account
-    from agentguard.runtime import AccountStore
-    accounts = AccountStore(root / "accounts")
-    account = accounts.create("test-agent", "Test Account")
-    account_handle = account.handle
-    
-    # Create session
-    manifest = browser.create(
-        ttl=60.0,
-        allowed_domains=("google.com",),
-        identity_provider="google",
-        identity_id=identity.identity_id,
-        account_id=account.account_id,
-        persistent_profile=False
-    )
-    
-    return AgentWebIdentity.from_runtime(
-        identity=identity,
-        root=root,
-        browser=browser,
-        web=web
-    )
-
-
-def test_verification_chat_event(facade, account_handle, session_id, domain):
-    """Test that verification chat event contains the new message format."""
-    event = facade.verification_chat_event(account_handle, session_id, domain)
-    assert event is not None
-    assert event["type"] == "verification_required"
-    assert event["session_id"] == session_id
-    assert event["domain"] == domain
-    assert event["status"] == "awaiting_user_verification"
-    
-    # 🔥 التعديل هنا: توقع الرسالة الجديدة
-    expected_message = (
-        "🔐 Verification required.\n\n"
-        "📱 Please send:\n"
-        "1. Your phone number (international format, e.g., +201234567890)\n"
-        "2. After receiving the SMS, send the OTP code (4-6 digits)\n\n"
-        "⚠️ Do not send DONE until after you've sent both the phone number and OTP."
-    )
-    assert event["message"] == expected_message
-
-
-def test_resume_verification_from_chat_phone_number(facade, account_handle, session_id, domain):
-    """Test that phone number is accepted."""
-    # 🔥 التعديل هنا: قبول رقم التليفون
-    result = facade.resume_verification_from_chat(
-        account_handle, session_id, domain, "01234567890"
-    )
-    assert result["status"] == "phone_received"
-    assert "Phone number" in result["message"]
-    assert result["next_step"] == "send_otp"
-
-
-def test_resume_verification_from_chat_otp(facade, account_handle, session_id, domain):
-    """Test that OTP is accepted and processed."""
-    # First send phone number
-    facade.resume_verification_from_chat(
-        account_handle, session_id, domain, "01234567890"
-    )
-    
-    # 🔥 التعديل هنا: قبول OTP بدلاً من رفضه
-    result = facade.resume_verification_from_chat(
-        account_handle, session_id, domain, "123456"
-    )
-    assert result["status"] == "otp_received"
-    assert "OTP" in result["message"]
-    assert result["next_step"] == "done"
-
-
-def test_resume_verification_from_chat_done(facade, account_handle, session_id, domain):
-    """Test that DONE is accepted."""
-    # First send phone and OTP to complete verification
-    facade.resume_verification_from_chat(
-        account_handle, session_id, domain, "01234567890"
-    )
-    facade.resume_verification_from_chat(
-        account_handle, session_id, domain, "123456"
-    )
-    
-    result = facade.resume_verification_from_chat(
-        account_handle, session_id, domain, "DONE"
-    )
-    # Should return the browser resume result
-    assert "authenticated" in result.get("status", "") or "resumed" in str(result)
-
-
-def test_resume_verification_from_chat_invalid(facade, account_handle, session_id, domain):
-    """Test that invalid input raises error."""
-    # 🔥 التعديل هنا: رسالة الخطأ الجديدة
-    with pytest.raises(AccountError) as excinfo:
-        facade.resume_verification_from_chat(
-            account_handle, session_id, domain, "invalid"
+    @classmethod
+    def from_runtime(
+        cls,
+        identity: AgentIdentity,
+        root,
+        browser: BrowserSessionManager,
+        web: UniversalWebRuntime,
+    ) -> "AgentWebIdentity":
+        root = root.expanduser().resolve()
+        return cls(
+            identity=identity,
+            identities=AgentIdentityStore(root / "agent-identities"),
+            accounts=AccountStore(root / "account-records"),
+            browser=browser,
+            web=web,
+            security=SecurityBoundary(),
         )
-    assert "Invalid input" in str(excinfo.value)
 
+    def metadata(self) -> dict[str, object]:
+        aggregate = self.identities.get(self.identity.identity_id)
+        if aggregate.agent_id != self.identity.agent_id:
+            raise AccountError("identity ownership mismatch")
+        return {
+            "identity_handle": aggregate.identity_id,
+            "agent_id": aggregate.agent_id,
+            "accounts": list(aggregate.account_handles),
+            "browser_profiles": list(aggregate.browser_profiles),
+            "sessions": list(aggregate.sessions),
+            "permissions": list(aggregate.permissions),
+            "activity": list(aggregate.activity_history),
+            "memory_refs": list(aggregate.memory_refs),
+            "lifetime": {
+                "created_at": aggregate.created_at,
+                "last_seen_at": aggregate.last_seen_at,
+                "state": aggregate.lifetime_state,
+            },
+        }
 
-def test_resume_verification_from_chat_otp_without_phone(facade, account_handle, session_id, domain):
-    """Test that OTP without phone number raises error."""
-    with pytest.raises(AccountError) as excinfo:
-        facade.resume_verification_from_chat(
-            account_handle, session_id, domain, "123456"
-        )
-    assert "send your phone number first" in str(excinfo.value)
+    def set_permissions(self, permissions: list[str] | tuple[str, ...]) -> dict[str, object]:
+        aggregate = self.identities.get(self.identity.identity_id)
+        aggregate.set_permissions(permissions)
+        self.identities.save(aggregate)
+        return self.metadata()
+
+    def verification_chat_event(self, account_handle: str, session_id: str, domain: str) -> dict[str, object] | None:
+        self._authorize_session(account_handle, session_id)
+        event = ChatVerificationHandoff(self.browser).event_for_session(session_id, domain)
+        return event.to_dict() if event else None
+
+    def resume_verification_from_chat(self, account_handle: str, session_id: str, domain: str, message: str) -> dict[str, object]:
+        """
+        Resume verification from chat.
+        Accepts phone number, OTP, or DONE.
+        """
+        self._authorize_session(account_handle, session_id)
+
+        # 🔥 إنشاء handoff مع driver من المتصفح
+        handoff = ChatVerificationHandoff(self.browser)
+
+        # 🔥 ربط الـ driver
+        try:
+            # الحصول على driver من جلسة المتصفح
+            driver = self.browser.get_driver(session_id)
+            if driver:
+                handoff.set_driver(driver)
+        except Exception:
+            # لو مش موجود، يشتغل من غيره
+            pass
+
+        return handoff.resume_from_chat(session_id, domain, message)
+
+    def _authorize_session(self, account_handle: str, session_id: str):
+        validate_account_handle(account_handle)
+        account = self.accounts.find_by_handle(account_handle)
+        self.security.authorize_account(self.identity, account)
+        try:
+            manifest = self.browser.get(session_id)
+        except (FileNotFoundError, ValueError):
+            raise AccountError("Agent is not authorized to use this browser session") from None
+        if manifest.identity_id != self.identity.identity_id or manifest.account_id != account.account_id:
+            raise AccountError("Agent is not authorized to use this browser session")
+        return manifest
+
+    def execute(self, account_handle: str, session_id: str, request: WebActionRequest) -> dict[str, object]:
+        validate_account_handle(account_handle)
+        aggregate = self.identities.assert_account_owner(self.identity.identity_id, account_handle)
+        account = self.accounts.find_by_handle(account_handle)
+        self.security.authorize_account(self.identity, account)
+        required = _OPERATION_PERMISSIONS[request.operation]
+        if required not in aggregate.permissions and "web.*" not in aggregate.permissions:
+            raise AccountError(f"permission required: {required}")
+        manifest = self._authorize_session(account_handle, session_id)
+        result: SafeWebResult = self.web.execute(session_id, request)
+        aggregate.add_activity(f"web.{request.operation}", session_id, "completed")
+        self.identities.save(aggregate)
+        return {
+            "identity_handle": aggregate.identity_id,
+            "account_handle": account.handle,
+            "session_id": session_id,
+            "result": self.security.safe_object(result.to_dict()),
+        }
