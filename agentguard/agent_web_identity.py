@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .accounts import AccountError, validate_account_handle
 from .agent_identity import AgentIdentityStore
@@ -31,6 +31,7 @@ class AgentWebIdentity:
     browser: BrowserSessionManager
     web: UniversalWebRuntime
     security: SecurityBoundary
+    _handoff: ChatVerificationHandoff | None = field(default=None, repr=False)
 
     @classmethod
     def from_runtime(
@@ -88,20 +89,17 @@ class AgentWebIdentity:
         """
         self._authorize_session(account_handle, session_id)
 
-        # 🔥 إنشاء handoff مع driver من المتصفح
-        handoff = ChatVerificationHandoff(self.browser)
+        # 🔥 استخدم نفس الـ handoff لو موجود، وإلا أنشئ واحد جديد
+        if self._handoff is None:
+            self._handoff = ChatVerificationHandoff(self.browser)
+            try:
+                driver = self.browser.get_driver(session_id)
+                if driver:
+                    self._handoff.set_driver(driver)
+            except Exception:
+                pass
 
-        # 🔥 ربط الـ driver
-        try:
-            # الحصول على driver من جلسة المتصفح
-            driver = self.browser.get_driver(session_id)
-            if driver:
-                handoff.set_driver(driver)
-        except Exception:
-            # لو مش موجود، يشتغل من غيره
-            pass
-
-        return handoff.resume_from_chat(session_id, domain, message)
+        return self._handoff.resume_from_chat(session_id, domain, message)
 
     def _authorize_session(self, account_handle: str, session_id: str):
         validate_account_handle(account_handle)
@@ -132,4 +130,4 @@ class AgentWebIdentity:
             "account_handle": account.handle,
             "session_id": session_id,
             "result": self.security.safe_object(result.to_dict()),
-        }
+    }
