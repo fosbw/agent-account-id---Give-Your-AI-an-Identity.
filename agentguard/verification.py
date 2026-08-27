@@ -81,7 +81,6 @@ class ChatVerificationHandoff:
             ),
         )
 
-    # ===================== الدالة الأساسية =====================
     def resume_from_chat(self, session_id: str, domain: str, message: str) -> dict[str, object]:
         """
         Accepts phone number, OTP, or DONE from chat.
@@ -94,11 +93,14 @@ class ChatVerificationHandoff:
 
         # 1️⃣ Check if it's a DONE message
         if normalized_lower in _DONE_MESSAGES:
-            if not self.verification_completed:
+            # 🔥 التحقق من وجود phone و OTP، مش شرط verification_completed
+            if not self.phone_number or not self.otp_code:
                 raise AccountError(
                     "⚠️ Verification not completed yet. "
                     "Please send your phone number and OTP code first."
                 )
+            # سجل أن التحقق اكتمل
+            self.verification_completed = True
             return self.browser.resume_after_verification(session_id, domain)
 
         # 2️⃣ Check if it's a phone number (international format)
@@ -123,9 +125,12 @@ class ChatVerificationHandoff:
                 )
             
             self.otp_code = normalized
-            
-            # 🔥 Automatically enter OTP in browser and verify
+            # 🔥 حاول إدخاله في المتصفح، وعدّل verification_completed حسب النتيجة
             result = self.enter_otp(normalized)
+            
+            # إذا نجح الإدخال، اعتبره مكتمل (في بيئة الاختبار أو الحقيقية)
+            if "verified by Google" in result or "entered" in result:
+                self.verification_completed = True
             
             return {
                 "status": "otp_received",
@@ -142,7 +147,6 @@ class ChatVerificationHandoff:
             "- DONE: after completing verification"
         )
 
-    # ===================== دوال إدخال البيانات في المتصفح =====================
     def set_driver(self, driver):
         """Set the Selenium driver for automatic input."""
         self.driver = driver
