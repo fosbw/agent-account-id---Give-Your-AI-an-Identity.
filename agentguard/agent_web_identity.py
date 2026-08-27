@@ -82,8 +82,26 @@ class AgentWebIdentity:
         return event.to_dict() if event else None
 
     def resume_verification_from_chat(self, account_handle: str, session_id: str, domain: str, message: str) -> dict[str, object]:
+        """
+        Resume verification from chat.
+        Accepts phone number, OTP, or DONE.
+        """
         self._authorize_session(account_handle, session_id)
-        return ChatVerificationHandoff(self.browser).resume_from_chat(session_id, domain, message)
+        
+        # 🔥 إنشاء handoff مع driver من المتصفح
+        handoff = ChatVerificationHandoff(self.browser)
+        
+        # 🔥 ربط الـ driver
+        try:
+            # الحصول على driver من جلسة المتصفح
+            driver = self.browser.get_driver(session_id)
+            if driver:
+                handoff.set_driver(driver)
+        except Exception:
+            # لو مش موجود، يشتغل من غيره
+            pass
+        
+        return handoff.resume_from_chat(session_id, domain, message)
 
     def _authorize_session(self, account_handle: str, session_id: str):
         validate_account_handle(account_handle)
