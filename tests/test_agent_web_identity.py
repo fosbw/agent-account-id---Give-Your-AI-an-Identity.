@@ -114,7 +114,10 @@ def test_agent_web_identity_enforces_explicit_permissions(tmp_path: Path) -> Non
         facade.execute(handle, session_id, WebActionRequest("read"))
 
 
-def test_agent_web_identity_chat_event_only_appears_for_real_challenge(tmp_path: Path) -> None:
+# ========== 🔥 التعديلات الجديدة ==========
+
+def test_agent_web_identity_chat_event_contains_new_message(tmp_path: Path) -> None:
+    """Test that verification chat event contains the new message format."""
     facade, _browser, session_id, handle = _facade(tmp_path)
 
     assert facade.verification_chat_event(handle, session_id, "example.test") is None
@@ -124,20 +127,52 @@ def test_agent_web_identity_chat_event_only_appears_for_real_challenge(tmp_path:
     assert event is not None
     assert event["type"] == "verification_required"
     assert event["verification_state"] == "otp_required"
-    assert "Do not send the verification code here" in str(event["message"])
+    
+    # 🔥 الرسالة الجديدة
+    expected_message = (
+        "🔐 Verification required.\n\n"
+        "📱 Please send:\n"
+        "1. Your phone number (international format, e.g., +201234567890)\n"
+        "2. After receiving the SMS, send the OTP code (4-6 digits)\n\n"
+        "⚠️ Do not send DONE until after you've sent both the phone number and OTP."
+    )
+    assert event["message"] == expected_message
     assert "123456" not in str(event)
 
 
-def test_agent_web_identity_chat_resume_accepts_done_not_verification_code(tmp_path: Path) -> None:
+def test_agent_web_identity_chat_resume_accepts_phone_and_otp(tmp_path: Path) -> None:
+    """Test that resume_from_chat accepts phone number and OTP."""
     facade, _browser, session_id, handle = _facade(tmp_path)
     facade.browser.begin_verification_handoff(session_id, "mfa_required", "example.test")
 
-    with pytest.raises(AccountError, match="verification codes are not accepted"):
-        facade.resume_verification_from_chat(handle, session_id, "example.test", "123456")
+    # 🔥 إرسال رقم التليفون (مقبول دلوقتي)
+    phone_result = facade.resume_verification_from_chat(handle, session_id, "example.test", "01234567890")
+    assert phone_result["status"] == "phone_received"
+    assert phone_result["next_step"] == "send_otp"
 
+    # 🔥 إرسال OTP (مقبول دلوقتي)
+    otp_result = facade.resume_verification_from_chat(handle, session_id, "example.test", "123456")
+    assert otp_result["status"] == "otp_received"
+    assert otp_result["next_step"] == "done"
+
+    # 🔥 إرسال DONE
     resumed = facade.resume_verification_from_chat(handle, session_id, "example.test", "Done")
     assert resumed["status"] == "resume_requested"
     assert resumed["authentication_recheck_required"] is True
+
+
+def test_agent_web_identity_resume_rejects_invalid_input(tmp_path: Path) -> None:
+    """Test that invalid input raises error."""
+    facade, _browser, session_id, handle = _facade(tmp_path)
+    facade.browser.begin_verification_handoff(session_id, "mfa_required", "example.test")
+
+    # 🔥 إدخال غير صالح
+    with pytest.raises(AccountError, match="Invalid input"):
+        facade.resume_verification_from_chat(handle, session_id, "example.test", "invalid")
+
+    # 🔥 OTP بدون رقم
+    with pytest.raises(AccountError, match="send your phone number first"):
+        facade.resume_verification_from_chat(handle, session_id, "example.test", "123456")
 
 
 def test_agent_web_identity_rejects_wrong_browser_session(tmp_path: Path) -> None:
