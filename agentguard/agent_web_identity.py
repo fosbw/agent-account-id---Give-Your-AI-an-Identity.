@@ -130,4 +130,4 @@ class AgentWebIdentity:
             "account_handle": account.handle,
             "session_id": session_id,
             "result": self.security.safe_object(result.to_dict()),
-    }
+        }
