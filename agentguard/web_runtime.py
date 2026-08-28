@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote_plus
 
 from .accounts import AccountError
 from .browser import BrowserSessionManager
@@ -11,7 +12,8 @@ from .browser_auth import BrowserAutomation
 from .security import SecurityBoundary
 
 
-WebOperation = Literal["navigate", "read", "click", "fill", "select", "submit"]
+WebOperation = Literal["navigate", "search", "read", "click", "fill", "select", "submit"]
+DEFAULT_SEARCH_URL = "https://www.google.com/search"
 _SECRET_SELECTOR_WORDS = (
     "password",
     "passwd",
@@ -66,6 +68,11 @@ class UniversalWebRuntime:
     def execute(self, session_id: str, request: WebActionRequest) -> SafeWebResult:
         manifest = self.browser_manager.get(session_id)
         operation = request.operation
+        if operation == "search":
+            if not request.value or not request.value.strip():
+                raise AccountError("search requires a query")
+            return self.search(session_id, request.value, request.url)
+
         if operation == "navigate":
             if not request.url:
                 raise AccountError("navigate requires a URL")
@@ -98,14 +105,33 @@ class UniversalWebRuntime:
         self.browser.wait_for_load()
         return self._observed(session_id, operation, "action completed")
 
-    def _read(self, session_id: str) -> SafeWebResult:
+    def search(self, session_id: str, query: str, search_url: str | None = None) -> SafeWebResult:
+        """Open a real search results page inside the existing approved browser session."""
+        endpoint = (search_url or DEFAULT_SEARCH_URL).strip()
+        if not endpoint:
+            raise AccountError("search requires a search endpoint")
+        endpoint_decision = self.browser_manager.request_navigation(session_id, endpoint)
+        if not endpoint_decision.allowed:
+            raise AccountError(f"search blocked: {endpoint_decision.reason}")
+        canonical_endpoint = endpoint_decision.canonical_url or endpoint
+        separator = "&" if "?" in canonical_endpoint else "?"
+        target = f"{canonical_endpoint}{separator}q={quote_plus(query.strip())}"
+        decision = self.browser_manager.request_navigation(session_id, target)
+        if not decision.allowed:
+            raise AccountError(f"search blocked: {decision.reason}")
+        manifest = self.browser_manager.get(session_id)
+        self.browser.open(decision.canonical_url or target, Path(manifest.profile_dir))
+        self.browser.wait_for_load()
+        return self._read(session_id, operation="search")
+
+    def _read(self, session_id: str, operation: WebOperation = "read") -> SafeWebResult:
         url = self.browser.current_url()
         decision = self.browser_manager.request_navigation(session_id, url)
         if not decision.allowed:
             raise AccountError(f"read blocked: {decision.reason}")
         raw = self.browser.page_text()
         safe_content = self.security.safe_text(raw)
-        return self._observed(session_id, "read", "page read", content=safe_content)
+        return self._observed(session_id, operation, "page read", content=safe_content)
 
     def _observed(
         self,

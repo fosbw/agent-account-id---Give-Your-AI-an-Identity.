@@ -13,6 +13,7 @@ from .verification import ChatVerificationHandoff
 
 _OPERATION_PERMISSIONS = {
     "navigate": "web.navigate",
+    "search": "web.navigate",
     "read": "web.read",
     "click": "web.interact",
     "fill": "web.interact",

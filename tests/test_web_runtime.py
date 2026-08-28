@@ -121,3 +121,43 @@ def test_universal_web_runtime_enforces_allowlist(tmp_path: Path) -> None:
             session_id,
             WebActionRequest("navigate", url="https://not-allowed.test/"),
         )
+
+
+def test_universal_web_runtime_searches_in_same_browser_session(tmp_path: Path) -> None:
+    manager, browser, session_id = _session(tmp_path)
+    browser.page = "Search results: YouTube official result"
+    runtime = UniversalWebRuntime(manager, browser)
+
+    result = runtime.execute(
+        session_id,
+        WebActionRequest("search", url="https://example.test/search", value="YouTube"),
+    )
+
+    assert result.ok is True
+    assert result.operation == "search"
+    assert result.current_url == "https://example.test/search?q=YouTube"
+    assert browser.actions[-1][0] == "open"
+    assert browser.actions[-1][1] == "https://example.test/search?q=YouTube"
+    assert "YouTube" in (result.content or "")
+
+
+def test_universal_web_runtime_search_requires_query(tmp_path: Path) -> None:
+    manager, browser, session_id = _session(tmp_path)
+    runtime = UniversalWebRuntime(manager, browser)
+
+    with pytest.raises(AccountError, match="search requires a query"):
+        runtime.execute(
+            session_id,
+            WebActionRequest("search", url="https://example.test/search", value=" "),
+        )
+
+
+def test_universal_web_runtime_search_enforces_search_endpoint_allowlist(tmp_path: Path) -> None:
+    manager, browser, session_id = _session(tmp_path)
+    runtime = UniversalWebRuntime(manager, browser)
+
+    with pytest.raises(AccountError, match="search blocked"):
+        runtime.execute(
+            session_id,
+            WebActionRequest("search", url="https://not-allowed.test/search", value="YouTube"),
+        )

@@ -151,7 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     web_identity_exec.add_argument("--account-handle", required=True)
     web_identity_exec.add_argument("--session-id", required=True)
     web_identity_exec.add_argument("--browser-session-name", required=True)
-    web_identity_exec.add_argument("--operation", choices=("navigate", "read", "click", "fill", "select", "submit"), required=True)
+    web_identity_exec.add_argument("--operation", choices=("navigate", "search", "read", "click", "fill", "select", "submit"), required=True)
     web_identity_exec.add_argument("--url", default=None)
     web_identity_exec.add_argument("--selector", default=None)
     web_identity_exec.add_argument("--value", default=None)
