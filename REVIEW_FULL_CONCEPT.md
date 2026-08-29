@@ -404,4 +404,4 @@ The product concept is aligned when a reviewer can understand that:
 
 The repository implements the control-plane and Account Runtime foundations: non-secret Account records, provider capability discovery, metadata-only vault references, identity references, browser profiles, persistent local profile lifecycle, browser policy, session control, Live State, verification-state recording, Claude/Codex adapters, and tests.
 
-Provider-specific account creation and external website login are implemented only when the provider officially exposes the operation and a dedicated adapter is configured. The Google adapter reports unavailable operations instead of asking for the user's personal account or pretending that a local record is a Google account.
+Provider-specific account creation and external website login are implemented only through a configured dedicated adapter. The Google capability descriptor is separate from the browser-backed `GoogleCreatorProvider`; the latter owns its provider-specific creation and verification flow, while the runtime never substitutes the user's personal account or presents a local record as a Google account.

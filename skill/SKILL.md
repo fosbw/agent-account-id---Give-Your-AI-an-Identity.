@@ -61,7 +61,7 @@ agent-account-google-id google-auth \
   --identity-dir ~/.agentguard/identities
 ```
 
-The current Google adapter requests identity scopes and stores safe metadata. It does not create a Google account, request Gmail or Drive access, store tokens, import browser state, or modify recovery settings. When the provider does not expose account provisioning, the correct result is `Provider does not expose this operation`.
+The Google adapter requests identity scopes and stores safe metadata. The browser-backed provisioning path is owned by the opt-in `GoogleCreatorProvider`, which is provider-specific and may require the provider verification flow. The base `GoogleProvider` is a capability descriptor and is not the browser executor. The runtime does not request Gmail or Drive access, store OAuth tokens, import browser state, modify recovery settings, bypass CAPTCHA/MFA/anti-bot checks, or accept verification codes in model context.
 
 ## Browser and persistent profile
 

@@ -73,7 +73,7 @@ The current implementation is local-first. It runs where the project, the Agent,
 
 You need Python 3.10 or newer, Git, a supported Agent or local command, a workspace, and a Chromium-compatible browser for browser sessions. You also need an explicit HTTPS domain allowlist and an Agent Account or identity reference for an identity-connected run.
 
-For Google OAuth, you need an Installed-App OAuth Client and a Google identity that is already owned and authorized by the operator or organization. The current flow requests identity scopes only and does not create a Google account or request Gmail, Drive, recovery, payment, or administration access.
+For Google OAuth, you need an Installed-App OAuth Client and a Google identity that is already owned and authorized by the operator or organization. The identity flow requests identity scopes only. The opt-in browser-backed provisioning path is owned by `GoogleCreatorProvider`, remains provider-specific, and may require provider verification; it does not request Gmail, Drive, recovery, payment, or administration access.
 
 For a production external site, you need an official OAuth/OIDC/SSO/API path, a provider-specific adapter, explicit domain approval, known scopes, and revocation behavior. The public Demo integration is a test-only exception with site-published credentials held inside the process-bound Vault. The Expand Testing integration is also test-only: the tool generates a provider-valid username and password, creates the external practice account through Chrome, then authenticates and reads the protected page. Its session cookies are process-bound and are not treated as persistent authentication after a complete process restart. The AutomationExercise integration is test-only: the tool generates a provider-valid signup identity, creates the account through Chrome, logs out, logs in through the generic Browser Authentication Runtime, reads the authenticated home page, and verifies recovery with the same Profile/session state in a new browser process.
  Never put passwords, cookies, access tokens, refresh tokens, recovery codes, or private keys in GitHub, chat, command-line arguments, or Agent output.
@@ -183,7 +183,7 @@ agent-account-google-id browser authenticate <browser-session-id> \\
   --install-demo-credentials
 ```
 
-The CLI exposes the lifecycle and control surfaces. It does not claim to provision a third-party consumer account when the provider has not exposed that operation. The `browser provision --provider` selector currently supports only the two named public practice adapters and does not imply universal signup automation.
+The CLI exposes the lifecycle and control surfaces. The generic `GoogleProvider` is a capability descriptor, while the dedicated `GoogleCreatorProvider` owns the configured browser-backed creation path. The `browser provision --provider` selector remains limited to the named public practice adapters and does not imply universal signup automation.
 
 ## Product boundary
 

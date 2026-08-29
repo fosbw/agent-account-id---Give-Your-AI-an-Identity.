@@ -266,7 +266,10 @@ class GoogleProvider:
         return True
 
     def create_account(self, agent_id: str, display_name: str) -> AgentAccount:
-        raise ProviderOperationUnavailable("Provider does not expose this operation: Google account provisioning")
+        """Use GoogleCreatorProvider for browser-backed provisioning."""
+        raise ProviderOperationUnavailable(
+            "GoogleProvider is a capability descriptor; use GoogleCreatorProvider for browser provisioning"
+        )
 
     def initialize_identity(self, account: AgentAccount, identity_id: str) -> AgentAccount:
         if not identity_id or "/" in identity_id or "\\" in identity_id:

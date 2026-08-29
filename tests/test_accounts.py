@@ -60,7 +60,7 @@ def test_google_provider_capability_and_creator_path_contract(tmp_path: Path):
     provider = GoogleProvider()
     assert provider.capabilities().account_creation == "supported"
     assert provider.can_create_account() is True
-    with pytest.raises(ProviderOperationUnavailable, match="does not expose"):
+    with pytest.raises(ProviderOperationUnavailable, match="capability descriptor"):
         provider.create_account("agent-1", "Research Agent")
     creator = GoogleCreatorProvider(AccountVault(tmp_path / "vault"), headless=True)
     assert creator.can_create_account() is True

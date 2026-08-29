@@ -37,7 +37,7 @@ This is the shape of the product when an Agent starts working: identity, account
 | Universal Web Runtime | Provides provider-neutral navigate, read, click, fill, select, and submit mechanics under the existing browser allowlist; provider adapters remain responsible for signup and login selectors. |
 | Real Account Provisioning | Provides a generic provisioning runtime and one real public test-site adapter (`ExpandTestingProvider`) that creates an external test account in Chrome before authentication. |
 | Credential boundary | Accepts provider secrets only through an internal process-bound interface; public metadata, Agent output, logs, and Live State expose opaque references and safe status only. Nested safe outputs redact password, token, secret, bearer, and cookie values, and screenshot capture is blocked during authentication or credential-entry states. |
-| Google identity | Supports the official limited identity OAuth flow and stores identity metadata only. Google account provisioning is reported as unavailable when the provider does not expose that operation. |
+| Google identity and provisioning path | Supports the official limited identity OAuth flow and stores safe identity metadata. The opt-in `GoogleCreatorProvider` owns the browser-backed provisioning path and its provider verification handoff; the base `GoogleProvider` is a capability descriptor, not the browser executor. |
 | GitHub Provider | Real GitHub App/OAuth token authentication and read actions through the official REST API; browser login remains provider-specific. |
 | Expand Testing Provider | Real browser signup, credential placement through the internal Vault boundary, login, authenticated-page verification, and harmless page reading on the public practice environment. |
 | AutomationExercise Provider | A second real browser signup/login integration using a multi-field form, normal dropdowns and checkboxes, authenticated home-page action, and same-profile/session recovery. |
@@ -139,7 +139,7 @@ agent-account-google-id google-auth \
   --identity-dir ~/.agentguard/identities
 ```
 
-The flow uses PKCE and identity scopes. It stores safe subject and email metadata only. It does not create a Google account, request Gmail or Drive access, persist OAuth tokens, import browser state, or modify recovery settings.
+The identity flow uses PKCE and identity scopes and stores safe subject and email metadata only. Browser-backed provisioning, when explicitly invoked through `GoogleCreatorProvider`, remains provider-specific and may require the provider verification flow. The runtime does not request Gmail or Drive access, persist OAuth tokens, import browser state, or modify recovery settings.
 
 ## Browser session
 
@@ -298,7 +298,7 @@ CREATE
   -> DESTROY LOCAL SESSION DATA
 ```
 
-The provider declares its real capabilities through a normalized matrix: `CREATE_ACCOUNT`, `INITIALIZE_ACCOUNT`, `AUTHENTICATE`, `PERSIST_SESSION`, `REFRESH_SESSION`, `REVOKE_SESSION`, `ROTATE_CREDENTIAL`, and `VERIFY_STATE`. The Google provider in this repository reports third-party account provisioning as unavailable rather than asking for the user's personal account. `ExpandTestingProvider` declares browser account creation and internal credential initialization as supported only for its public practice environment; its process-bound session recovery is explicitly limited. Provider-managed credential operations remain outside this local process.
+The provider declares its real capabilities through a normalized matrix: `CREATE_ACCOUNT`, `INITIALIZE_ACCOUNT`, `AUTHENTICATE`, `PERSIST_SESSION`, `REFRESH_SESSION`, `REVOKE_SESSION`, `ROTATE_CREDENTIAL`, and `VERIFY_STATE`. The Google capability descriptor reports the configured creation capability, while the CLI routes the browser-backed path through `GoogleCreatorProvider`; calling the base `GoogleProvider.create_account()` directly is rejected because it has no browser executor. `ExpandTestingProvider` declares browser account creation and internal credential initialization as supported only for its public practice environment; its process-bound session recovery is explicitly limited. Provider-managed credential operations remain outside this local process.
 
 ## Security boundary
 
@@ -306,7 +306,7 @@ This project is a control plane and guardrail layer. It is not an operating-syst
 
 Raw credentials must never enter the model context, tool output, event logs, Live View, GitHub, or command-line arguments. The current vault accepts provider secrets only through internal adapter calls, keeps raw values process-bound, and stores only opaque references and safe metadata on disk. It does not persist passwords, cookies, OAuth tokens, recovery codes, or private keys. The second live provider test proves session recovery from browser persistence state without exposing that state to the Agent.
 
-The tool does not create or distribute consumer accounts, bypass CAPTCHA/MFA/anti-bot controls, change recovery settings, or provide unrestricted “log in anywhere” automation. When a provider does not expose an operation, the provider adapter reports that operation as unavailable.
+The tool does not distribute accounts, bypass CAPTCHA/MFA/anti-bot controls, change recovery settings, or provide unrestricted “log in anywhere” automation. Google browser provisioning is exposed only through its dedicated provider-specific creator path; verification challenges remain visible as provider states and cannot be bypassed. When a provider does not expose an operation, the provider adapter reports that operation as unavailable.
 
 ## Development and tests
 
